@@ -1,0 +1,629 @@
+#!/bin/sh
+
+
+c_print_template() {
+cat<<EOF
+#rem created on $(date +%F) by $USER
+ 
+#include <string>
+#include <iostream> 
+
+#define _RELEASE 0
+
+typedef std::string String;
+struct MyStruct { int Val; }; 
+
+#ret String = "hello world";
+#ret MyStruct* = nullptr;
+
+#rem create oshello.h & oshello.cpp with procedures
+#file osHello os_read os_write os_open os_close
+#file opt_struct
+
+#wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
+#git https://github.com/acklinr/ip_interface.git ip_interace
+
+class MyClassParent open close m_pFile
+class IMyClass get set
+class MyClass MyFunc Func m_Var
+{
+	IMyClass m_Var
+	String MyFunc Func open close
+	MyStruct* Func m_Var.get
+}
+class YourClass read write
+#order MyClass:MyClassParent YourClass:MyClassParent
+
+#EOF 
+EOF
+}
+
+c_print_testfunc() {
+cat<<EOF
+
+int test_${1}(int argc, char **argv)
+{
+	${2} *${1} = new ${2};
+	LOG_TRACE("test ${2}");
+	/* ${3} */
+	delete ${1};
+	return 0;
+}
+EOF
+}
+
+sh_print_version() {
+cat<<EOF
+#!/bin/sh
+YEAR=$(date +%g)
+echo \"\$((\$(date +%g)-\$YEAR)).\$(date +%U).\$(date +%w).\$(date +%H)\" 
+EOF
+}
+
+sh_print_testfunc() {
+	cname=${1}
+	lpname=${2}
+cat<<EOF
+#!/bin/sh
+# created on $(date +%F) by $USER
+
+export LD_LIBRARY_PATH=$(pwd)/lib:\$LD_LIBRARY_PATH
+
+echo "test ${cname} begin: \$0"
+valgrind --leak-check=yes --log-file=out/${cname}.out bin/${lpname} -test=${cname}
+echo "test ${cname} end: \$0"
+
+#EOF
+EOF
+}
+
+c_print_comment() {
+	file=$(f_tolower ${1})
+cat<<EOF
+/* created on: $(date +%F) by ${USER} */ 
+/* file: ${file} */
+
+EOF
+}
+
+c_spec_main_body() {
+	lpname=${1}
+	cname="common"
+#	upname=$(f_toupper ${lpname})
+	c_print_comment "${cname}.cpp"
+
+cat<<EOF
+
+#include <cstring>
+#include "version.h"
+#include "${lpname}.h"
+#include "${lpname}global.h"
+EOF
+	f_listclass ${SPEC_FILE} | while read class name other ; do
+		lname=$(f_tolower $name)
+		ltest=$(f_tolower "test/test_${lname}")
+		c_print_testfunc ${lname} ${name} ${other} 
+		sh_print_testfunc ${name} ${lpname} > $ltest
+		chmod a+x $ltest
+	done
+cat<<EOF
+
+${pname}Global g_Global;
+
+typedef struct ${lpname}_testarray
+{
+	const char *pStr;
+	int(*fn)(int, char**);
+} ${upname}_TESTARRAY;
+
+int main(int argc, char** argv)
+{
+	int nIndex = 0;
+	const ${upname}_TESTARRAY list[] = {
+EOF
+
+	f_listclass ${SPEC_FILE} | while read class name other ; do
+		lname=$(echo $name | tr  '[:upper:]' '[:lower:]')
+		echo "		{\"-test=${name}\", &test_${lname}},"
+	done
+
+cat<<EOF
+		{0, 0}
+	};
+	LOG_TRACE("build:" << ${upname}_VERSION << " rev:" << ${upname}_REVISION);
+	LOG_TRACE("begin test (" << argc << ")");
+	while((list[nIndex].pStr != 0) && (argc > 0))
+	{
+		if(strcmp(argv[1], list[nIndex].pStr) == 0)
+			return list[nIndex].fn(argc, argv);
+		nIndex++;
+	}
+	LOG_TRACE("end test (" << argv[0] << ")");
+
+	return argc;
+}	
+EOF
+}
+
+c_spec_common_header() {
+	lpname=${1}
+	cname="common"
+	c_print_comment "${lpname}${cname}.h"
+	c_print_header_begin ${lpname} ${cname}
+	grep "#include" ${SPEC_FILE} 
+cat<<EOF
+
+#include <iostream>
+
+#define LOG_TRACE(VAR_A) std::cout << "[TRACE]" << __FUNCTION__ << ":" << __LINE__ << " " << VAR_A << std::endl; 
+
+EOF
+	grep "#define" ${SPEC_FILE} 
+	echo "" 
+	egrep "^typedef" ${SPEC_FILE}
+	echo "" 
+	egrep "^struct" ${SPEC_FILE}
+	echo "" 
+	c_print_header_end ${lpname} ${cname}
+}
+
+c_spec_body() {
+	pfile=${1}
+	cname=${2}
+	file=${3}
+	other=${4}
+	lcname=$(f_tolower ${cname})
+	c_print_comment "${lcname}.cpp"
+cat<<EOF
+
+#include "${lcname}.h"
+
+EOF
+	c_print_ctor ${cname} "ctor-${cname}"
+	c_print_dtor ${cname} "drot-${cname}"
+	for f in `echo ${other}` ; do
+		echo "${f}" | grep "^m_" 2>&1 > /dev/null
+		if [ "$?" != 0 ] ; then
+			rm -f /tmp/found_lock 2>&1 > /dev/null
+			f_listmembers ${SPEC_FILE} ${cname} | grep ${f} | while read f_ret f_memb f_calls ; do
+				if [ "$f_memb" = "${f}" ] ; then
+					c_print_member "${f_ret}" "${cname}" "${f}"
+					touch /tmp/found_lock
+					break
+				fi
+			done
+			if [ ! -r "/tmp/found_lock" ] ; then
+				c_print_member "void" "${cname}" "${f}"
+			fi
+		fi
+	done
+}
+
+c_spec_print_includes() {
+	cname=${1}
+	pname=${2}
+	f_listclass ${SPEC_FILE} | sort -u | awk '{print $2}' > /tmp/${pname}.tmp
+	f_listmembers ${SPEC_FILE} ${cname} | while read f_ret f_memb f_calls ; do
+		if [ -n "${f_ret}" ] ; then
+			grep "$f_ret" /tmp/${pname}.tmp 2>&1 > /dev/null
+			if [ "$?" = "0" ] ; then
+				lname=$(f_tolower ${f_ret})
+				echo "#include \"${lname}.h\""
+			fi
+		fi
+	done
+	rm /tmp/${pname}.tmp
+}
+
+c_spec_header() {
+	pname=${1}
+	cname=${2}
+	text=${3}
+	other=${4}
+	lpname=$(f_tolower ${pname})
+	c_print_comment ${text}
+	c_print_header_begin ${pname} ${cname}
+	grep "#include" ${SPEC_FILE} 
+	echo "#include \"${lpname}common.h\""
+	c_spec_print_includes  "${cname}" "${pname}"
+	c_spec_header_class_body "${cname}" "${pname}" "${other}"
+	c_print_header_end ${pname} ${cname}
+}
+
+c_spec_header_class_begin() {
+	cname=${1}
+	pname=${2}
+	parent=${3}
+cat<<EOF
+class ${cname} : public ${parent}
+{
+public:
+EOF
+}
+
+c_spec_header_class_body()
+{
+	cname=${1}
+	pname=${2}
+	other=${3}
+	parent="$(f_listorder "${SPEC_FILE}" "${pname}" "${cname}")"
+	if [ -n "${parent}" ] ; then
+		if [ "${parent}" != "${cname}" ] ; then
+			lparent=$(f_tolower ${parent})
+			echo "#include \"${lparent}.h\""
+		fi
+	fi
+	echo "" 
+	c_spec_header_class_begin "${cname}" "${pname}" "${parent}"
+cat<<EOF
+	${cname}();
+	~${cname}();
+EOF
+	ret="void"
+	for fname in `echo ${other}` ; do
+		echo "${fname}" | grep "^m_" 2>&1 > /dev/null
+		if [ "$?" != 0 ] ; then
+			text="function"
+		else
+			echo "${fname}" | grep "^m_p" 2>&1 > /dev/null
+			if [ "$?" != 0 ] ; then
+				text="variable"
+				ret="int"
+			else
+				text="pointer"
+				ret="void*"
+			fi
+		fi
+		newret=$(f_listmembers ${SPEC_FILE} ${cname} | awk '{print $2, $1}' | egrep "^${fname}" | awk '{print $2}')
+		if [ -n "$newret" ] ; then
+			ret=${newret}
+		fi
+cat<<EOF
+	$ret ${fname}(); /**< ${fname} member ${text} */
+EOF
+	done
+	c_spec_header_class_end
+	echo "" 
+}
+
+c_spec_header_class_end() {
+cat<<EOF
+
+protected:
+
+private:
+
+};
+EOF
+}
+
+c_print_header_begin() {
+	upname=$(f_toupper ${1})
+	ucname=$(f_toupper ${2})
+	echo "#ifndef ${upname}_${ucname}_H_"
+	echo "#define ${upname}_${ucname}_H_"
+	echo ""
+}
+
+c_print_header_end() {
+	upname=$(f_toupper ${1})
+	ucname=$(f_toupper ${2})
+	echo "#endif /* ${upname}_${ucname}_H_ */"
+	echo ""
+}
+
+c_remove_parent() {
+	pname="${1}"
+	file="${2}"
+	sed -i "s/: public ${pname}Object//" "${file}"
+}
+
+c_print_cfunc() {
+	ret=${1}
+	name=${2}
+cat<<EOF
+
+$1 ${2}(void *p)
+{
+	return 0;
+}
+EOF
+}
+
+c_print_ctor() {
+cat<<EOF
+${1}::${1}()
+{
+		LOG_TRACE(" ${2} ")
+}
+
+EOF
+}
+
+c_print_dtor() {
+cat<<EOF
+${1}::~${1}()
+{
+		LOG_TRACE(" ${2} ")
+}
+
+EOF
+}
+
+c_print_member() {
+	ret=${1}
+	cname=${2}
+	fname=${3}
+	desc=${fname}
+	param="wtf"
+	c_print_dox "${desc}" "${param}" "${ret}"
+	val="return"
+	case "${ret}" in
+	bool)
+		val="return true"
+	;;
+	int)
+		val="return 0"
+	;;
+	std::string)
+		val="return \"hello\""
+	;;
+	char)
+		val="return 0"
+	;;
+	bool)
+		val="return true"
+	;;
+	void)
+		val="return"
+	;;
+	*)
+		val="${ret} var =$(f_listdefault "${SPEC_FILE}" "$ret") return var"
+	;;
+  	esac	
+
+cat<<EOF
+${ret} ${cname}::${fname}()
+{
+		LOG_TRACE(" enter ");
+		/* FUNC_CALL-${fname} */	
+		LOG_TRACE(" exit ");
+		${val};
+}
+
+EOF
+}
+
+c_print_dox() {
+cat<<EOF
+/**
+ * @desc ${1}
+ * @param ${2}
+ * @return ${3}
+ */
+EOF
+}	
+
+process_wget() {
+	egrep "^#wget" ${1} | while read keyword url outfile misc; do
+		if [ -n "${outfile}" ] ; then
+			mkdir -p dl/${outfile}
+			OUT=dl/${outfile}/$(basename $url)
+			if [ ! -r "$OUT" ] ; then
+				wget $url -O $OUT || rm $OUT
+			else
+				echo "already downloaded $OUT"
+			fi
+		fi
+	done
+}
+
+process_git() {
+	egrep "^#git" ${1} | while read keyword url outdir misc; do
+		if [ -n "${outdir}" ] ; then
+			OUT=dl/${outdir}
+			if [ ! -d "$OUT" ] ; then
+				mkdir -p dl/${outdir}
+				git clone $url dl/${outdir}
+			else
+				echo "already downloaded $OUT"
+			fi
+		fi
+	done
+
+}
+
+process_file() {
+	file=${1}
+	pname=${2}
+	lpname=${3}
+	f_listfile_raw ${file} | while read name f_proc; do
+		if [ -n "$name" ] ; then
+			hfile=$(f_tolower "include/$name.h")
+			cfile=$(f_tolower "src/$name.cpp")
+
+			f_resetfile ${hfile}
+			f_resetfile ${cfile}
+			c_print_comment "${name}.h" >> ${hfile}
+			c_print_header_begin ${upname} ${name} >> ${hfile}
+
+cat<<EOF >> ${hfile}
+
+#include "${lpname}common.h"
+
+EOF
+			c_print_comment "${name}.cpp" >> ${cfile}
+			echo "#include \"${name}.h\"" >> ${cfile}
+			for fn in `echo $f_proc`; do
+				echo "int ${fn};" >> ${hfile}
+				c_print_cfunc "int" ${fn} >> ${cfile}
+			done
+			echo "" >> ${cfile}
+
+			echo "" >> ${hfile}
+			c_print_header_end ${upname} ${name} >> ${hfile}
+
+#			for fn in `echo $f_proc`; do
+#				sed -i "s,#include \"${3}common.h\",&\n\nint ${fn}(void *p);,g" $PFILE
+#			done
+		fi
+	done
+}
+
+sh_create_version() {
+	sh_print_version  > scripts/version
+	chmod a+x scripts/version
+}
+
+sh_print_comment() {
+	echo "# file: ${1}"
+	echo "# created on: $(date +%F) by ${USER}"
+	echo ""
+}
+
+mf_print() {
+	echo ""
+	echo "$1: $2"
+	echo "	$3"
+}
+
+f_listfile_raw() {
+	file=${1}
+	keyw=${2}
+	cat ${file} | awk '/^#file\s/' | sed -e 's,#file,,g'
+}
+
+f_listorder_raw() {
+	file=${1}
+	keyw=${2}
+	cat ${file} | awk '/^#order\s/' | grep "${keyw}" | sed -e 's,#order,,g'
+}
+
+f_listorder() {
+	file=${1}
+	pname=${2}
+	keyw=${3}
+	match=0
+	for grp in `f_listorder_raw ${file} ${keyw}` ; do
+		echo "$grp" | grep "${keyw}:" 2>&1 > /dev/null
+		if [ "$?" = 0 ] ; then
+			echo "$grp" | awk -F':' '{print $2}'
+			return
+		fi
+	done
+	if [ "x${match}" = "x0" ] ; then
+		echo "${pname}Object"
+	fi
+}
+
+f_listdefault() {
+	file=${1}
+	keyw=${2}
+	cat ${file} | awk '/^#ret\s/' | grep "${keyw}" | awk -F'=' '{print $2}'
+}
+
+f_listclass() {
+	file=${1}
+	clist=${2}
+	cat ${file} | egrep -v "^#rem" | awk '/class\s/'
+	for f in `echo ${clist}` ; do
+		echo "class ${f}"
+	done
+}
+
+f_listmembers() {
+	cat ${1} | egrep -v "^#rem" | awk "/class\s${2}\s/ {flag=1;next} /class/{flag=0} flag {print}" 
+}
+
+f_replace() {
+#	echo "replace (${1}) with (${2}) in file (${3})"
+	sed -i "s,${1},${2},g" ${3}
+}
+
+f_tolower() {
+	echo $1 | tr '[:upper:]' '[:lower:]'
+}
+
+f_toupper() {
+	echo $1 | tr '[:lower:]' '[:upper:]'
+}
+
+f_resetfile() {
+	echo -n > $1
+}
+
+case "$1" in
+	-noop)
+		shift
+		SPEC_FILE=Hello.spec
+		c_spec_print_includes "MyClass" "Hello"
+	;;
+	-gen)
+		c_print_template > Hello.spec
+	;;
+	*)
+		if [ ! -n "$1" ] ; then
+			echo "what"
+			exit 1
+		fi
+		SPEC_FILE=$1
+		pname=$(basename $SPEC_FILE .spec)
+		lpname=$(f_tolower $pname)
+		upname=$(f_toupper $pname)
+		phfile=include/${lpname}.h
+		if [ -n "$2" ] ; then
+			cd $2
+		else
+			mkdir -p ${lpname}
+			cp $SPEC_FILE ${lpname}/
+			cd ${lpname}
+		fi
+		mkdir -p bin lib conf scripts obj src include doc out test
+		sh_create_version
+		echo -n > include/version.h
+		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/version.h
+
+		process_file ${SPEC_FILE} "${pname}" "${lpname}"
+		process_wget ${SPEC_FILE}
+		process_git ${SPEC_FILE}
+
+		MF=Makefile
+		f_resetfile $MF
+		sh_print_comment $MF >> $MF
+		echo "${upname}_VERSION := \$(shell scripts/version)" >> $MF
+		mf_print "all" "" "" >> $MF
+		mf_print "lib" "" "g++ -shared -Wl,-soname,lib${lpname}.so -o lib/lib${lpname}.so obj/*.lo" >> $MF
+		mf_print "lib/lib${lpname}.so" "lib" "" >> $MF
+		mf_print "doxygen" "lib/lib${lpname}.so" "doxygen -g conf/${pname}.doxygen" >> $MF
+	
+		f_resetfile ${phfile}
+		c_print_comment "${lpname}.h" >> ${phfile}
+		c_print_header_begin ${upname} ${upname} >> ${phfile}
+		grep "#include" ${SPEC_FILE} >> ${phfile}
+		echo "" >> ${phfile}
+		echo "#include \"${lpname}common.h\"" >> ${phfile}
+		f_listclass $SPEC_FILE "${pname}Object ${pname}Global" | while read keyw cname other ; do
+			lname=$(f_tolower $cname)
+			hfile=include/${lname}.h
+			cfile=src/${lname}.cpp
+			echo "creating file $hfile for class $cname" 
+			c_spec_header "${pname}" "${cname}" "${cname}.h" "${other}" > ${hfile}
+			c_spec_body "${pname}" "${cname}" "${cname}.cpp" "${other}" > ${cfile}
+			mf_print "obj/${lname}.o" "${cfile}" "g++ -g -std=c++11 -Wall -I./include -c ${cfile} -o obj/${lname}.o" >> $MF
+			mf_print "obj/${lname}.lo" "${cfile}" "g++ -g -c -std=c++11 -fPIC -Wall -I./include ${cfile} -o obj/${lname}.lo" >> $MF
+			f_replace "all: " "all: obj/${lname}.o " $MF
+			f_replace "lib: " "lib: obj/${lname}.lo " $MF
+			echo "#include \"${lname}.h\"" >> ${phfile}
+		done
+		echo "" >> ${phfile}
+		c_print_header_end ${upname} ${upname} >> ${phfile}
+		c_spec_common_header "${lpname}" > include/${lpname}common.h
+		c_spec_main_body "${lpname}" > src/main.cpp
+		c_remove_parent "${pname}" "include/${lpname}object.h"
+		c_remove_parent "${pname}" "include/${lpname}global.h"
+
+		echo "" >> $MF
+		mf_print "${lpname}" "src/main.cpp lib/lib${lpname}.so" "g++ -g -I./include -L./lib -Wall -D${upname}_VERSION=\\\"\$(${upname}_VERSION)\\\" src/main.cpp -l${lpname} -o bin/${lpname} " >> $MF
+		mf_print "clean" " " "rm -f obj/*.o obj/*.lo bin/${lpname} lib/lib${lpname}*.so*" >> $MF
+	;;
+esac
