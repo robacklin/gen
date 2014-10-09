@@ -12,6 +12,7 @@ cat<<EOF
 #define _RELEASE 0
 
 typedef std::string String;
+typedef int Number;
 struct MyStruct { int Val; }; 
 
 #ret String = "hello world";
@@ -24,8 +25,11 @@ struct MyStruct { int Val; };
 #wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
 #git https://github.com/acklinr/ip_interface.git ip_interace
 
+#rem will git init and place git diff in test scripts
+#repo
+
 class MyClassParent open close m_pFile
-class IMyClass get set
+class IMyClass get set m_bOpen
 class MyClass MyFunc Func m_Var
 {
 	IMyClass m_Var
@@ -103,7 +107,7 @@ EOF
 	f_listclass ${SPEC_FILE} | while read class name other ; do
 		lname=$(f_tolower $name)
 		ltest=$(f_tolower "test/test_${lname}")
-		c_print_testfunc ${lname} ${name} ${other} 
+		c_print_testfunc "${lname}" "${name}" "${other}"
 		sh_print_testfunc ${name} ${lpname} > $ltest
 		chmod a+x $ltest
 	done
@@ -264,22 +268,26 @@ EOF
 	param=""
 	text="unknown"
 	for fname in `echo ${other}` ; do
+		text="function"
+		param=${DEF_CLASS_FUNC_PARAM}
+		ret="void"
 		echo "${fname}" | grep "^m_" 2>&1 > /dev/null
-		if [ "$?" != 0 ] ; then
-			text="function"
-			param=${DEF_CLASS_FUNC_PARAM}
-			ret="void"
-		else
-			echo "${fname}" | grep "^m_p" 2>&1 > /dev/null
-			if [ "$?" != 0 ] ; then
-				text="variable"
-				ret="int"
-				param=""
-			else
-				text="pointer"
-				ret="void*"
-				param=""
-			fi
+		if [ "$?" = 0 ] ; then
+			text="variable"
+			ret="int"
+			param=""
+		fi
+		echo "${fname}" | grep "^m_p" 2>&1 > /dev/null
+		if [ "$?" = 0 ] ; then
+			text="pointer"
+			ret="void*"
+			param=""
+		fi
+		echo "${fname}" | grep "^m_b" 2>&1 > /dev/null
+		if [ "$?" = 0 ] ; then
+			text="variable"
+			ret="bool"
+			param=""
 		fi
 		newret=$(f_listmembers ${SPEC_FILE} ${cname} | awk '{print $2, $1}' | egrep "^${fname}" | awk '{print $2}')
 		if [ -n "$newret" ] ; then
@@ -426,6 +434,29 @@ process_wget() {
 	done
 }
 
+process_repo() {
+	file=${1}
+	pname=${2}
+	egrep "^#repo" ${file} | while read keyw repo; do
+		if [ -n "${keyw}" ] ; then
+			if [ ! -d ".git" ] ; then
+				git init
+cat<<EOF > .gitignore
+./bin/*
+./lib/*
+./obj/*
+./out/*
+EOF
+				git add ./
+				git commit -a -m "initial commit" 2>&1 > /dev/null
+			else
+				git add ./
+				git commit -a -m "${pname}: spec updates $(date +%F) $(date +%T)" 2>&1 > /dev/null
+			fi
+		fi
+	done
+}
+
 process_git() {
 	egrep "^#git" ${1} | while read keyword url outdir misc; do
 		if [ -n "${outdir}" ] ; then
@@ -564,12 +595,14 @@ case "$1" in
 		c_spec_print_includes "MyClass" "Hello"
 	;;
 	-gen)
+		shift
+		echo "creating Hello.spec"
 		c_print_template > Hello.spec
 	;;
 	*)
 		if [ ! -n "$1" ] ; then
-			echo "what"
-			exit 1
+			$0 -gen
+			exit 0
 		fi
 		SPEC_FILE=$1
 		pname=$(basename $SPEC_FILE .spec)
@@ -630,5 +663,7 @@ case "$1" in
 		echo "" >> $MF
 		mf_print "${lpname}" "src/main.cpp lib/lib${lpname}.so" "g++ -g -I./include -L./lib -Wall -D${upname}_VERSION=\\\"\$(${upname}_VERSION)\\\" src/main.cpp -l${lpname} -o bin/${lpname} " >> $MF
 		mf_print "clean" " " "rm -f obj/*.o obj/*.lo bin/${lpname} lib/lib${lpname}*.so*" >> $MF
+
+		process_repo ${SPEC_FILE} "${pname}"
 	;;
 esac
