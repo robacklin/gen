@@ -1,5 +1,6 @@
 #!/bin/sh
 
+DEF_CLASS_FUNC_PARAM="(void *p)"
 
 c_print_template() {
 cat<<EOF
@@ -266,7 +267,7 @@ EOF
 		echo "${fname}" | grep "^m_" 2>&1 > /dev/null
 		if [ "$?" != 0 ] ; then
 			text="function"
-			param="()"
+			param=${DEF_CLASS_FUNC_PARAM}
 			ret="void"
 		else
 			echo "${fname}" | grep "^m_p" 2>&1 > /dev/null
@@ -390,7 +391,7 @@ c_print_member() {
   	esac	
 
 cat<<EOF
-${ret} ${cname}::${fname}()
+${ret} ${cname}::${fname}${DEF_CLASS_FUNC_PARAM}
 {
 		LOG_TRACE(" enter ");
 		/* FUNC_CALL-${fname} */	
