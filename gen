@@ -5,6 +5,7 @@ DEF_CLASS_FUNC_PARAM="(void *p)"
 c_print_template() {
 cat<<EOF
 #rem created on $(date +%F) by $USER
+#repo
  
 #include <string>
 #include <iostream> 
@@ -26,7 +27,6 @@ struct MyStruct { int Val; };
 #git https://github.com/acklinr/ip_interface.git ip_interace
 
 #rem will git init and place git diff in test scripts
-#repo
 
 class MyClassParent open close m_pFile
 class IMyClass get set m_bOpen
@@ -210,14 +210,15 @@ c_spec_print_includes() {
 	f_listclass ${SPEC_FILE} | sort -u | awk '{print $2}' > /tmp/${pname}.tmp
 	f_listmembers ${SPEC_FILE} ${cname} | while read f_ret f_memb f_calls ; do
 		if [ -n "${f_ret}" ] ; then
-			grep "$f_ret" /tmp/${pname}.tmp 2>&1 > /dev/null
+#			grep "${f_ret}" /tmp/${pname}.tmp 2>&1 > /dev/null
+			egrep "${f_ret}\$" /tmp/${pname}.tmp 2>&1 > /dev/null
 			if [ "$?" = "0" ] ; then
 				lname=$(f_tolower ${f_ret})
-				echo "#include \"${lname}.h\""
+				echo "#include \"$(echo "${lname}" | sed -e 's/\*//g' ).h\""
 			fi
 		fi
 	done
-	rm /tmp/${pname}.tmp
+#	rm /tmp/${pname}.tmp
 }
 
 c_spec_header() {
@@ -591,13 +592,23 @@ f_resetfile() {
 case "$1" in
 	-noop)
 		shift
-		SPEC_FILE=Hello.spec
-		c_spec_print_includes "MyClass" "Hello"
 	;;
 	-gen)
 		shift
 		echo "creating Hello.spec"
 		c_print_template > Hello.spec
+	;;
+	-r)
+		shift
+		DIR=$1
+		if [ -n "$1" ] ; then
+			echo "reverse spec"
+			find $DIR -name \*.h\* | while read line ; do
+				cat $line | awk '/^class\s/ {print}' | sed -e 's/;//g' | sed -e 's/{//g'
+			done | sort -u 
+		else
+			$0 -r `pwd`
+		fi
 	;;
 	*)
 		if [ ! -n "$1" ] ; then
