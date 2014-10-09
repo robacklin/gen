@@ -321,9 +321,10 @@ c_remove_parent() {
 c_print_cfunc() {
 	ret=${1}
 	name=${2}
+	param=${3}
 cat<<EOF
 
-$1 ${2}(void *p)
+$ret ${name}${param}
 {
 	return 0;
 }
@@ -441,6 +442,7 @@ process_file() {
 		if [ -n "$name" ] ; then
 			hfile=$(f_tolower "include/$name.h")
 			cfile=$(f_tolower "src/$name.cpp")
+			lname=$(f_tolower ${name})
 
 			f_resetfile ${hfile}
 			f_resetfile ${cfile}
@@ -448,15 +450,15 @@ process_file() {
 			c_print_header_begin ${upname} ${name} >> ${hfile}
 
 cat<<EOF >> ${hfile}
-
 #include "${lpname}common.h"
 
 EOF
 			c_print_comment "${name}.cpp" >> ${cfile}
-			echo "#include \"${name}.h\"" >> ${cfile}
+			echo "#include \"${lname}.h\"" >> ${cfile}
+			param="(void *p)"
 			for fn in `echo $f_proc`; do
-				echo "int ${fn};" >> ${hfile}
-				c_print_cfunc "int" ${fn} >> ${cfile}
+				echo "int ${fn}${param};" >> ${hfile}
+				c_print_cfunc "int" "${fn}" "${param}" >> ${cfile}
 			done
 			echo "" >> ${cfile}
 
