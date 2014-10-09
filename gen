@@ -155,7 +155,7 @@ cat<<EOF
 
 #include <iostream>
 
-#define LOG_TRACE(VAR_A) std::cout << "[TRACE]" << __FUNCTION__ << ":" << __LINE__ << " " << VAR_A << std::endl; 
+#define LOG_TRACE(VAR_A) std::cout << "[TRACE] " << __FUNCTION__ << ":" << __LINE__ << " " << VAR_A << std::endl; 
 
 EOF
 	grep "#define" ${SPEC_FILE} 
@@ -260,18 +260,23 @@ cat<<EOF
 	~${cname}();
 EOF
 	ret="void"
+	param=""
+	text="unknown"
 	for fname in `echo ${other}` ; do
 		echo "${fname}" | grep "^m_" 2>&1 > /dev/null
 		if [ "$?" != 0 ] ; then
 			text="function"
+			param="()"
 		else
 			echo "${fname}" | grep "^m_p" 2>&1 > /dev/null
 			if [ "$?" != 0 ] ; then
 				text="variable"
 				ret="int"
+				param=""
 			else
 				text="pointer"
 				ret="void*"
+				param=""
 			fi
 		fi
 		newret=$(f_listmembers ${SPEC_FILE} ${cname} | awk '{print $2, $1}' | egrep "^${fname}" | awk '{print $2}')
@@ -279,7 +284,7 @@ EOF
 			ret=${newret}
 		fi
 cat<<EOF
-	$ret ${fname}(); /**< ${fname} member ${text} */
+	$ret ${fname}${param}; /**< ${fname} member ${text} */
 EOF
 	done
 	c_spec_header_class_end
@@ -464,10 +469,6 @@ EOF
 
 			echo "" >> ${hfile}
 			c_print_header_end ${upname} ${name} >> ${hfile}
-
-#			for fn in `echo $f_proc`; do
-#				sed -i "s,#include \"${3}common.h\",&\n\nint ${fn}(void *p);,g" $PFILE
-#			done
 		fi
 	done
 }
