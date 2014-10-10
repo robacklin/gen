@@ -5,8 +5,20 @@ DEF_CLASS_FUNC_PARAM="(void *p)"
 c_print_template() {
 cat<<EOF
 #rem created on $(date +%F) by $USER
+
+#rem will git init and place git diff in test scripts
 #repo
  
+#wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
+#git https://github.com/acklinr/ip_interface.git ip_interace master
+
+#rem create oshello.h & oshello.cpp with procedures
+#file osHello os_read os_write os_open os_close
+#file os_helpers
+
+#rem test scripts are created for below
+#test os_write file_close bad_filename dbl_close no_filename
+
 #include <string>
 #include <iostream> 
 
@@ -19,15 +31,6 @@ struct MyStruct { int Val; };
 #ret String = "hello world";
 #ret MyStruct* = nullptr;
 
-#rem create oshello.h & oshello.cpp with procedures
-#file osHello os_read os_write os_open os_close
-#file opt_struct
-
-#wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
-#git https://github.com/acklinr/ip_interface.git ip_interace
-
-#rem will git init and place git diff in test scripts
-
 class MyClassParent open close m_pFile
 class IMyClass get set m_bOpen
 class MyClass MyFunc Func m_Var
@@ -39,7 +42,7 @@ class MyClass MyFunc Func m_Var
 class YourClass read write
 #order MyClass:MyClassParent YourClass:MyClassParent
 
-#EOF 
+#eof
 EOF
 }
 
@@ -71,6 +74,13 @@ sh_print_testfunc() {
 cat<<EOF
 #!/bin/sh
 # created on $(date +%F) by $USER
+
+which valgrind 2>&1 > /dev/null
+if [ "x\$?" != "x0" ] ; then
+	echo "valgrind not found in path"
+	echp "apt-get install valgrind"
+	exit 1
+fi
 
 export LD_LIBRARY_PATH=$(pwd)/lib:\$LD_LIBRARY_PATH
 
@@ -115,16 +125,16 @@ cat<<EOF
 
 ${pname}Global g_Global;
 
-typedef struct ${lpname}_testarray
+typedef struct ${lpname}_map
 {
 	const char *pStr;
 	int(*fn)(int, char**);
-} ${upname}_TESTARRAY;
+} ${upname}_MAP;
 
 int main(int argc, char** argv)
 {
 	int nIndex = 0;
-	const ${upname}_TESTARRAY list[] = {
+	const ${upname}_MAP list[] = {
 EOF
 
 	f_listclass ${SPEC_FILE} | while read class name other ; do
@@ -137,7 +147,7 @@ cat<<EOF
 	};
 	LOG_TRACE("build:" << ${upname}_VERSION << " rev:" << ${upname}_REVISION);
 	LOG_TRACE("begin test (" << argc << ")");
-	while((list[nIndex].pStr != 0) && (argc > 0))
+	while((list[nIndex].pStr != 0) && (argc > 1))
 	{
 		if(strcmp(argv[1], list[nIndex].pStr) == 0)
 			return list[nIndex].fn(argc, argv);
@@ -185,20 +195,20 @@ cat<<EOF
 
 EOF
 	c_print_ctor ${cname} "ctor-${cname}"
-	c_print_dtor ${cname} "drot-${cname}"
+	c_print_dtor ${cname} "dtor-${cname}"
 	for f in `echo ${other}` ; do
 		echo "${f}" | grep "^m_" 2>&1 > /dev/null
 		if [ "$?" != 0 ] ; then
 			rm -f /tmp/found_lock 2>&1 > /dev/null
 			f_listmembers ${SPEC_FILE} ${cname} | grep ${f} | while read f_ret f_memb f_calls ; do
 				if [ "$f_memb" = "${f}" ] ; then
-					c_print_member "${f_ret}" "${cname}" "${f}"
+					c_print_member "${f_ret}" "${cname}" "${f}" "${f_calls}" "${other}"
 					touch /tmp/found_lock
 					break
 				fi
 			done
 			if [ ! -r "/tmp/found_lock" ] ; then
-				c_print_member "void" "${cname}" "${f}"
+				c_print_member "void" "${cname}" "${f}" "${f_calls}" "${other}"
 			fi
 		fi
 	done
@@ -371,8 +381,13 @@ c_print_member() {
 	ret=${1}
 	cname=${2}
 	fname=${3}
+	fcalls=${4}
+	other=${5}
 	desc=${fname}
-	param="wtf"
+	param="inputVar"
+	if [ "x$(echo "${fcalls}" | wc -c)" = "x1" ] ; then
+		fcalls=${other}
+	fi
 	c_print_dox "${desc}" "${param}" "${ret}"
 	val="return"
 	case "${ret}" in
@@ -395,7 +410,12 @@ c_print_member() {
 		val="return"
 	;;
 	*)
-		val="${ret} var =$(f_listdefault "${SPEC_FILE}" "$ret") return var"
+		def=$(f_listdefault "${SPEC_FILE}" "$ret")
+		if [ -n "${def}" ] ; then
+			val="${ret} var =${def} return var"
+		else
+			val="${ret} var; return var"
+		fi
 	;;
   	esac	
 
@@ -403,7 +423,7 @@ cat<<EOF
 ${ret} ${cname}::${fname}${DEF_CLASS_FUNC_PARAM}
 {
 		LOG_TRACE(" enter ");
-		/* FUNC_CALL-${fname} */	
+		/* ${fcalls} */	
 		LOG_TRACE(" exit ");
 		${val};
 }
@@ -459,12 +479,16 @@ EOF
 }
 
 process_git() {
-	egrep "^#git" ${1} | while read keyword url outdir misc; do
+	egrep "^#git" ${1} | while read keyword url outdir branch misc; do
 		if [ -n "${outdir}" ] ; then
 			OUT=dl/${outdir}
 			if [ ! -d "$OUT" ] ; then
 				mkdir -p dl/${outdir}
-				git clone $url dl/${outdir}
+				if [ -n "${branch}" ] ; then
+					git clone -b ${branch} ${url} dl/${outdir}
+				else
+					git clone $url dl/${outdir}
+				fi
 			else
 				echo "already downloaded $OUT"
 			fi
@@ -473,14 +497,43 @@ process_git() {
 
 }
 
+process_test() {
+	file=${1}
+	pname=${2}
+	lpname=${3}
+	f_listtest_raw ${file} | while read f_test; do
+		if [ -n "$f_test" ] ; then
+			for name in `echo $f_test`; do
+				sfile=$(f_tolower "test/test_${name}")
+				lname=$(f_tolower ${name})
+
+cat<<EOF > ${sfile}
+#!/bin/sh
+# created on $(date +%F) by $USER
+# test place holder
+
+export LD_LIBRARY_PATH=$(pwd)/lib:\$LD_LIBRARY_PATH
+
+echo "test ${name} begin: \$0"
+valgrind --leak-check=yes --log-file=out/${name}.out bin/${lpname} -test=${name}
+echo "test ${name} end: \$0"
+
+#eof
+EOF
+			chmod a+x ${sfile}
+			done
+		fi
+	done
+}
+
 process_file() {
 	file=${1}
 	pname=${2}
 	lpname=${3}
 	f_listfile_raw ${file} | while read name f_proc; do
 		if [ -n "$name" ] ; then
-			hfile=$(f_tolower "include/$name.h")
-			cfile=$(f_tolower "src/$name.cpp")
+			hfile=$(f_tolower "include/${name}.h")
+			cfile=$(f_tolower "src/${name}.cpp")
 			lname=$(f_tolower ${name})
 
 			f_resetfile ${hfile}
@@ -524,9 +577,13 @@ mf_print() {
 	echo "	$3"
 }
 
+f_listtest_raw() {
+	file=${1}
+	cat ${file} | awk '/^#test\s/' | sed -e 's,#test,,g'
+}
+
 f_listfile_raw() {
 	file=${1}
-	keyw=${2}
 	cat ${file} | awk '/^#file\s/' | sed -e 's,#file,,g'
 }
 
@@ -633,6 +690,7 @@ case "$1" in
 		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/version.h
 
 		process_file ${SPEC_FILE} "${pname}" "${lpname}"
+		process_test ${SPEC_FILE} "${pname}" "${lpname}"
 		process_wget ${SPEC_FILE}
 		process_git ${SPEC_FILE}
 
