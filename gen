@@ -1,4 +1,5 @@
 #!/bin/sh
+#dep: awk grep tr wget git chmod
 
 DEF_CLASS_FUNC_PARAM="(void *p)"
 
@@ -47,6 +48,7 @@ EOF
 }
 
 c_print_testfunc() {
+	if [ -n "${2}" ] ; then
 cat<<EOF
 
 int test_${1}(int argc, char **argv)
@@ -58,6 +60,16 @@ int test_${1}(int argc, char **argv)
 	return 0;
 }
 EOF
+	else
+cat<<EOF
+
+int test_${1}(int argc, char **argv)
+{
+	LOG_TRACE("test ${1}");
+	return 0;
+}
+EOF
+	fi
 }
 
 sh_print_version() {
@@ -121,6 +133,14 @@ EOF
 		sh_print_testfunc ${name} ${lpname} > $ltest
 		chmod a+x $ltest
 	done
+	f_listtest_raw ${SPEC_FILE} | while read f_test; do
+		if [ -n "$f_test" ] ; then
+			for name in `echo $f_test`; do
+				lname=$(f_tolower ${name})
+				c_print_testfunc ${lname}
+			done
+		fi
+	done
 cat<<EOF
 
 ${pname}Global g_Global;
@@ -129,29 +149,39 @@ typedef struct ${lpname}_map
 {
 	const char *pStr;
 	int(*fn)(int, char**);
+	int nRun;
 } ${upname}_MAP;
 
 int main(int argc, char** argv)
 {
-	int nIndex = 0;
-	const ${upname}_MAP list[] = {
+	int nIdx= 0;
+	const ${upname}_MAP list[] = { /* list of test procedures */
 EOF
 
 	f_listclass ${SPEC_FILE} | while read class name other ; do
 		lname=$(echo $name | tr  '[:upper:]' '[:lower:]')
-		echo "		{\"-test=${name}\", &test_${lname}},"
+		echo "		{\"-test=${name}\", &test_${lname}, 1},"
+	done
+	f_listtest_raw ${SPEC_FILE} | while read f_test; do
+		if [ -n "$f_test" ] ; then
+			for name in `echo $f_test`; do
+				lname=$(f_tolower ${name})
+				echo "		{\"-test=${lname}\", &test_${lname}, 0},"
+			done
+		fi
 	done
 
 cat<<EOF
-		{0, 0}
+		{0, 0, 0}
 	};
-	LOG_TRACE("build:" << ${upname}_VERSION << " rev:" << ${upname}_REVISION);
+	LOG_TRACE("build:" << ${upname}_VERSION 
+			<< " rev:" << ${upname}_REVISION);
 	LOG_TRACE("begin test (" << argc << ")");
-	while((list[nIndex].pStr != 0) && (argc > 1))
+	while((list[nIdx].pStr != 0) && (argc > 1))
 	{
-		if(strcmp(argv[1], list[nIndex].pStr) == 0)
-			return list[nIndex].fn(argc, argv);
-		nIndex++;
+		if((strcmp(argv[1], list[nIdx].pStr) == 0) && (list[nIdx].nRun != 0))
+			return list[nIdx].fn(argc, argv);
+		nIdx++;
 	}
 	LOG_TRACE("end test (" << argv[0] << ")");
 
@@ -165,19 +195,19 @@ c_spec_common_header() {
 	cname="common"
 	c_print_comment "${lpname}${cname}.h"
 	c_print_header_begin ${lpname} ${cname}
-	grep "#include" ${SPEC_FILE} 
+	awk '/^#include\s/' ${SPEC_FILE} 
 cat<<EOF
 
 #include <iostream>
 
-#define LOG_TRACE(VAR_A) std::cout << "[TRACE] " << __FUNCTION__ << ":" << __LINE__ << " " << VAR_A << std::endl; 
+#define LOG_TRACE(VAR_A) std::cout << "[TRACE] (" << __FUNCTION__ << ":" << __LINE__ << ") " << VAR_A << std::endl; 
 
 EOF
-	grep "#define" ${SPEC_FILE} 
+	awk '/^#define\s/' ${SPEC_FILE} 
 	echo "" 
-	egrep "^typedef" ${SPEC_FILE}
+	awk '/^typedef\s/' ${SPEC_FILE}
 	echo "" 
-	egrep "^struct" ${SPEC_FILE}
+	awk '/^struct\s/' ${SPEC_FILE}
 	echo "" 
 	c_print_header_end ${lpname} ${cname}
 }
@@ -200,7 +230,7 @@ EOF
 		echo "${f}" | grep "^m_" 2>&1 > /dev/null
 		if [ "$?" != 0 ] ; then
 			rm -f /tmp/found_lock 2>&1 > /dev/null
-			f_listmembers ${SPEC_FILE} ${cname} | grep ${f} | while read f_ret f_memb f_calls ; do
+			f_listmembers ${SPEC_FILE} ${cname} | awk "/${f}/" | while read f_ret f_memb f_calls ; do
 				if [ "$f_memb" = "${f}" ] ; then
 					c_print_member "${f_ret}" "${cname}" "${f}" "${f_calls}" "${other}"
 					touch /tmp/found_lock
@@ -222,6 +252,7 @@ c_spec_print_includes() {
 		if [ -n "${f_ret}" ] ; then
 #			grep "${f_ret}" /tmp/${pname}.tmp 2>&1 > /dev/null
 			egrep "${f_ret}\$" /tmp/${pname}.tmp 2>&1 > /dev/null
+#			awk "/^${f_ret}\$/" /tmp/${pname}.tmp 2>&1 > /dev/null
 			if [ "$?" = "0" ] ; then
 				lname=$(f_tolower ${f_ret})
 				echo "#include \"$(echo "${lname}" | sed -e 's/\*//g' ).h\""
@@ -239,7 +270,7 @@ c_spec_header() {
 	lpname=$(f_tolower ${pname})
 	c_print_comment ${text}
 	c_print_header_begin ${pname} ${cname}
-	grep "#include" ${SPEC_FILE} 
+	awk '/^#include\s/' ${SPEC_FILE} 
 	echo "#include \"${lpname}common.h\""
 	c_spec_print_includes  "${cname}" "${pname}"
 	c_spec_header_class_body "${cname}" "${pname}" "${other}"
@@ -442,7 +473,7 @@ EOF
 }	
 
 process_wget() {
-	egrep "^#wget" ${1} | while read keyword url outfile misc; do
+	awk '/^#wget\s/' ${1} | while read keyword url outfile misc; do
 		if [ -n "${outfile}" ] ; then
 			mkdir -p dl/${outfile}
 			OUT=dl/${outfile}/$(basename $url)
@@ -458,7 +489,7 @@ process_wget() {
 process_repo() {
 	file=${1}
 	pname=${2}
-	egrep "^#repo" ${file} | while read keyw repo; do
+	awk '/^#repo\s/' ${file} | while read keyw repo; do
 		if [ -n "${keyw}" ] ; then
 			if [ ! -d ".git" ] ; then
 				git init
@@ -479,7 +510,7 @@ EOF
 }
 
 process_git() {
-	egrep "^#git" ${1} | while read keyword url outdir branch misc; do
+	awk '/^#git\s/' ${1} | while read keyword url outdir branch misc; do
 		if [ -n "${outdir}" ] ; then
 			OUT=dl/${outdir}
 			if [ ! -d "$OUT" ] ; then
@@ -619,14 +650,15 @@ f_listdefault() {
 f_listclass() {
 	file=${1}
 	clist=${2}
-	cat ${file} | egrep -v "^#rem" | awk '/class\s/'
+#	cat ${file} | egrep -v "^#rem" | awk '/class\s/'
+	cat ${file} | awk '!/^#rem/' | awk '/class\s/'
 	for f in `echo ${clist}` ; do
 		echo "class ${f}"
 	done
 }
 
 f_listmembers() {
-	cat ${1} | egrep -v "^#rem" | awk "/class\s${2}\s/ {flag=1;next} /class/{flag=0} flag {print}" 
+	cat ${1} | awk '!/^#rem/' | awk "/class\s${2}\s/ {flag=1;next} /class/{flag=0} flag {print}" 
 }
 
 f_replace() {
@@ -639,6 +671,7 @@ f_tolower() {
 }
 
 f_toupper() {
+#OR awk '{ print toupper($0) }'
 	echo $1 | tr '[:lower:]' '[:upper:]'
 }
 
@@ -706,7 +739,7 @@ case "$1" in
 		f_resetfile ${phfile}
 		c_print_comment "${lpname}.h" >> ${phfile}
 		c_print_header_begin ${upname} ${upname} >> ${phfile}
-		grep "#include" ${SPEC_FILE} >> ${phfile}
+		awk '/^#include\s/' ${SPEC_FILE} >> ${phfile}
 		echo "" >> ${phfile}
 		echo "#include \"${lpname}common.h\"" >> ${phfile}
 		f_listclass $SPEC_FILE "${pname}Object ${pname}Global" | while read keyw cname other ; do
