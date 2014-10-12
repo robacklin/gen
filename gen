@@ -1,24 +1,66 @@
 #!/bin/sh
 #dep: awk grep tr wget git chmod
 
+GEN_VERSION="0.0.$(date +%U).$(date +%H)"
+DEF_LANG="cpp"
+DEF_RET="int"
+DEF_RET_PROC="int"
 DEF_CLASS_FUNC_PARAM="(void *p)"
+DEF_PROC_FUNC_PARAM="(void *p)"
+CLASS_GI=" getInstance m_pInstance "
+CLASS_ST=" enter exit transition getEvent setEvent getState setState getName setName m_pName m_nState m_iState m_iNext m_iPrev "
+CLASS_DB=" select update delete insert alter drop create query m_pTable m_pDb m_pCur m_iConn "
+CLASS_SS=" start stop run join wait waitCond process worker m_nThread m_iThread m_pThread m_bRun "
+CLASS_OC=" open close isOpen m_pFile m_iFile m_pHandle m_bOpen "
+CLASS_NET=" connect disconnect listen accept bind select setTimeout getTimeout m_pSocket m_iSocket m_iServer m_iClient m_bServer m_bClient m_bInet m_bUnix "
+CLASS_SR=" send recv m_pMessage m_nMessage m_iMessage m_iSource m_iDestination m_iRoute "
+CLASS_RW=" read write m_pBuffer m_nBuffer m_iBuffer "
+CLASS_GS=" get set clear init isEmpty m_iValue m_iSize m_iStatus m_iVersion m_iGroup m_iLevel m_iError m_iType "
+CLASS_IO=" {GS}{OC}{RW} "
 
 c_print_template() {
+	lname=${1}
+	name=${2}
 cat<<EOF
-#rem created on $(date +%F) by $USER
+#created on $(date +%F) by $USER
+#{GI} ${CLASS_GI}
+#{ST} ${CLASS_ST}
+#{DB} ${CLASS_DB}
+#{SS} ${CLASS_SS}
+#{OC} ${CLASS_OC}
+#{NET} ${CLASS_NET}
+#{SR} ${CLASS_SR}
+#{RW} ${CLASS_RW}
+#{GS} ${CLASS_GS}
+#{IO} ${CLASS_IO}
 
-#rem will git init and place git diff in test scripts
-#repo
- 
-#wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
-#git https://github.com/acklinr/ip_interface.git ip_interace master
+#will git init and place git diff in test scripts
+repo yes
 
-#rem create oshello.h & oshello.cpp with procedures
-#file osHello os_read os_write os_open os_close
-#file os_helpers
+#cpp|c#|java|qt
+lang cpp
+  	
+wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
+git https://github.com/acklinr/ip_interface.git ip_interace master
 
-#rem test scripts are created for below
-#test os_write file_close bad_filename dbl_close no_filename
+#linux char driver ${name} (not added to Makefile)
+driver ${name} my_func1 my_func2
+
+def rw= read write
+def foxy:my_= open close
+#create ${lname}_os.h & ${lname}_os.cpp with procedures ${lname}_os_*
+file ${lname}_os [foxy] [rw]
+file ${lname}_helpers
+
+def csm:Pas= CreateStateMachine
+def pas:PasOn= Initialization Destroy Start Stop DebugDump
+ifile Dispatcher {cmd} [pas] [csm]
+
+#namespace file
+ns NameSpace1:${name}:MQueue msg_q open close [rw]
+
+#test scripts are created for below
+test [rw] file_close bad_filename dbl_close no_filename
 
 #include <string>
 #include <iostream> 
@@ -26,24 +68,24 @@ cat<<EOF
 #define _RELEASE 0
 
 typedef std::string String;
-typedef int Number;
+ret String = "hello world";
+
 struct MyStruct { int Val; }; 
 
-#ret String = "hello world";
-#ret MyStruct* = nullptr;
-
-class MyClassParent open close m_pFile
-class IMyClass get set m_bOpen
-class MyClass MyFunc Func m_Var
+class MyClassParent {OC} m_nValue [rw]
+class IMyClass {GS} m_isInterfaceClass
+class MyClass m_iVar MyFunc OurFunc {SR}
 {
-	IMyClass m_Var
-	String MyFunc Func open close
-	MyStruct* Func m_Var.get
+	IMyClass* m_iVar
+	String MyFunc OurFunc?open|close
+	MyStruct* OurFunc m_iVar->get
 }
-class YourClass read write
-#order MyClass:MyClassParent YourClass:MyClassParent
+iclass YourClassIf {IO} m_isInterfaceClass
+class YourClass {RW} {GI}
+order MyClass:MyClassParent YourClass:MyClassParent
+order MyClassParent:IMyClass
 
-#eof
+#eof v${GEN_VERSION}
 EOF
 }
 
@@ -154,7 +196,7 @@ typedef struct ${lpname}_map
 
 int main(int argc, char** argv)
 {
-	int nIdx= 0;
+	int nIdx = 0;
 	const ${upname}_MAP list[] = { /* list of test procedures */
 EOF
 
@@ -238,7 +280,7 @@ EOF
 				fi
 			done
 			if [ ! -r "/tmp/found_lock" ] ; then
-				c_print_member "void" "${cname}" "${f}" "${f_calls}" "${other}"
+				c_print_member "${DEF_RET}" "${cname}" "${f}" "${f_calls}" "${other}"
 			fi
 		fi
 	done
@@ -247,19 +289,19 @@ EOF
 c_spec_print_includes() {
 	cname=${1}
 	pname=${2}
-	f_listclass ${SPEC_FILE} | sort -u | awk '{print $2}' > /tmp/${pname}.tmp
+	f_listclass ${SPEC_FILE} | sort -u | awk '{print $2}' > $TMPDIR/${pname}.tmp
 	f_listmembers ${SPEC_FILE} ${cname} | while read f_ret f_memb f_calls ; do
 		if [ -n "${f_ret}" ] ; then
-#			grep "${f_ret}" /tmp/${pname}.tmp 2>&1 > /dev/null
-			egrep "${f_ret}\$" /tmp/${pname}.tmp 2>&1 > /dev/null
-#			awk "/^${f_ret}\$/" /tmp/${pname}.tmp 2>&1 > /dev/null
+#			egrep "${f_ret}\$" $TMPDIR/${pname}.tmp 2>&1 > /dev/null
+			egrep "^${f_ret}\$" $TMPDIR/${pname}.tmp 2>&1 > /dev/null
+#			awk "/^${f_ret}\$/" $TMPDIR/${pname}.tmp 2>&1 > /dev/null
 			if [ "$?" = "0" ] ; then
 				lname=$(f_tolower ${f_ret})
 				echo "#include \"$(echo "${lname}" | sed -e 's/\*//g' ).h\""
 			fi
 		fi
 	done
-#	rm /tmp/${pname}.tmp
+	rm $TMPDIR/${pname}.tmp
 }
 
 c_spec_header() {
@@ -267,13 +309,14 @@ c_spec_header() {
 	cname=${2}
 	text=${3}
 	other=${4}
+	keyw=${5}
 	lpname=$(f_tolower ${pname})
 	c_print_comment ${text}
 	c_print_header_begin ${pname} ${cname}
 	awk '/^#include\s/' ${SPEC_FILE} 
 	echo "#include \"${lpname}common.h\""
 	c_spec_print_includes  "${cname}" "${pname}"
-	c_spec_header_class_body "${cname}" "${pname}" "${other}"
+	c_spec_header_class_body "${cname}" "${pname}" "${other}" "${keyw}"
 	c_print_header_end ${pname} ${cname}
 }
 
@@ -281,11 +324,23 @@ c_spec_header_class_begin() {
 	cname=${1}
 	pname=${2}
 	parent=${3}
+	lang=${DEF_LANG}
+# qt Q_OBJECT public slots:
+	if [ "${lang}" = "cpp" ] ; then
 cat<<EOF
 class ${cname} : public ${parent}
 {
 public:
 EOF
+	else
+cat<<EOF
+class ${cname} : public QObject
+{
+	Q_OBJECT
+	//Q_PROPERTY(bool hasConnection READ hasConnection NOTIFY hasConnectionChanged)
+public:
+EOF
+	fi
 }
 
 c_spec_header_class_body()
@@ -293,6 +348,7 @@ c_spec_header_class_body()
 	cname=${1}
 	pname=${2}
 	other=${3}
+	keyw=${4}
 	parent="$(f_listorder "${SPEC_FILE}" "${pname}" "${cname}")"
 	if [ -n "${parent}" ] ; then
 		if [ "${parent}" != "${cname}" ] ; then
@@ -302,41 +358,52 @@ c_spec_header_class_body()
 	fi
 	echo "" 
 	c_spec_header_class_begin "${cname}" "${pname}" "${parent}"
+	echo "${cname}" | egrep "^I" 2>&1 > /dev/null
+	if [ "$?" = 0 ] ; then
+		virt="virtual "
+	fi
 cat<<EOF
 	${cname}();
-	~${cname}();
+	${virt}~${cname}();
 EOF
-	ret="void"
+	ret="${DEF_RET}"
 	param=""
 	text="unknown"
 	for fname in `echo ${other}` ; do
 		text="function"
 		param=${DEF_CLASS_FUNC_PARAM}
-		ret="void"
+		ret="${DEF_RET}"
+		if [ "${keyw}" = "iclass" ] ; then
+			virt="virtual "
+		fi
 		echo "${fname}" | grep "^m_" 2>&1 > /dev/null
 		if [ "$?" = 0 ] ; then
 			text="variable"
 			ret="int"
 			param=""
+			virt=""
 		fi
 		echo "${fname}" | grep "^m_p" 2>&1 > /dev/null
 		if [ "$?" = 0 ] ; then
 			text="pointer"
 			ret="void*"
 			param=""
+			virt=""
 		fi
 		echo "${fname}" | grep "^m_b" 2>&1 > /dev/null
 		if [ "$?" = 0 ] ; then
 			text="variable"
 			ret="bool"
 			param=""
+			virt=""
 		fi
-		newret=$(f_listmembers ${SPEC_FILE} ${cname} | awk '{print $2, $1}' | egrep "^${fname}" | awk '{print $2}')
+		newret=$(f_listmembers ${SPEC_FILE} ${cname} | awk '{print $2, $1}' | egrep "^${fname}" | awk '{print $2}' | head -1)
 		if [ -n "$newret" ] ; then
 			ret=${newret}
+			virt=""
 		fi
 cat<<EOF
-	$ret ${fname}${param}; /**< ${fname} member ${text} */
+	${virt}$ret ${fname}${param}; /**< ${fname} ${virt}member ${text} */
 EOF
 	done
 	c_spec_header_class_end
@@ -344,6 +411,8 @@ EOF
 }
 
 c_spec_header_class_end() {
+	lang=${DEF_LANG}
+	if [ "${lang}" = "cpp" ] ; then
 cat<<EOF
 
 protected:
@@ -352,14 +421,29 @@ private:
 
 };
 EOF
+	else
+cat<<EOF
+
+signals:
+
+protected:
+
+private:
+
+};
+EOF
+	fi
 }
 
 c_print_header_begin() {
 	upname=$(f_toupper ${1})
 	ucname=$(f_toupper ${2})
-	echo "#ifndef ${upname}_${ucname}_H_"
-	echo "#define ${upname}_${ucname}_H_"
-	echo ""
+cat<<EOF
+#pragma once
+#ifndef ${upname}_${ucname}_H_
+#define ${upname}_${ucname}_H_
+
+EOF
 }
 
 c_print_header_end() {
@@ -445,7 +529,12 @@ c_print_member() {
 		if [ -n "${def}" ] ; then
 			val="${ret} var =${def} return var"
 		else
-			val="${ret} var; return var"
+			echo "${ret}" | egrep "\*" 2>&1 > /dev/null
+			if [ "$?" = "0" ] ; then
+				val="${ret} var = nullptr; return var"
+			else
+				val="${ret} var; return var"
+			fi
 		fi
 	;;
   	esac	
@@ -473,7 +562,7 @@ EOF
 }	
 
 process_wget() {
-	awk '/^#wget\s/' ${1} | while read keyword url outfile misc; do
+	awk '/^wget\s/' ${1} | while read keyword url outfile misc; do
 		if [ -n "${outfile}" ] ; then
 			mkdir -p dl/${outfile}
 			OUT=dl/${outfile}/$(basename $url)
@@ -482,6 +571,8 @@ process_wget() {
 			else
 				echo "already downloaded $OUT"
 			fi
+		else
+			echo "malformed wget command"
 		fi
 	done
 }
@@ -489,7 +580,7 @@ process_wget() {
 process_repo() {
 	file=${1}
 	pname=${2}
-	awk '/^#repo\s/' ${file} | while read keyw repo; do
+	awk '/^repo\sy/' ${file} | while read keyw repo; do
 		if [ -n "${keyw}" ] ; then
 			if [ ! -d ".git" ] ; then
 				git init
@@ -505,12 +596,14 @@ EOF
 				git add ./
 				git commit -a -m "${pname}: spec updates $(date +%F) $(date +%T)" 2>&1 > /dev/null
 			fi
+		else
+			echo "malformed repo command"
 		fi
 	done
 }
 
 process_git() {
-	awk '/^#git\s/' ${1} | while read keyword url outdir branch misc; do
+	awk '/^git\s/' ${1} | while read keyword url outdir branch misc; do
 		if [ -n "${outdir}" ] ; then
 			OUT=dl/${outdir}
 			if [ ! -d "$OUT" ] ; then
@@ -523,6 +616,8 @@ process_git() {
 			else
 				echo "already downloaded $OUT"
 			fi
+		else
+			echo "malformed git command"
 		fi
 	done
 
@@ -537,7 +632,7 @@ process_test() {
 			for name in `echo $f_test`; do
 				sfile=$(f_tolower "test/test_${name}")
 				lname=$(f_tolower ${name})
-
+				echo "[test] creating ${sfile} for ${lname}"
 cat<<EOF > ${sfile}
 #!/bin/sh
 # created on $(date +%F) by $USER
@@ -557,15 +652,83 @@ EOF
 	done
 }
 
-process_file() {
+f_print_nspace_begin() {
+	nspace=${1}
+	echo ""
+	for ns in `echo ${nspace} | sed -e 's/:/ /g'` ; do
+cat<<EOF 
+namespace ${ns} {
+EOF
+	done
+	echo ""
+}
+
+f_print_nspace_end() {
+	nspace=${1}
+	echo ""
+	for ns in `echo ${nspace} | sed -e 's/:/ /g' | awk '{ for (i=NF; i>=1; i--) printf (i!=1) ? $i OFS : $i "\n" }'` ; do
+cat<<EOF
+} /* namespace: ${ns} */
+EOF
+	done
+	echo ""
+}
+
+process_nsfile() {
 	file=${1}
 	pname=${2}
 	lpname=${3}
-	f_listfile_raw ${file} | while read name f_proc; do
+	phfile=${4}
+	f_listnsfile_raw ${file} | while read nspace name f_proc; do
+		if [ -n "$name" ] ; then
+			lname=$(f_tolower ${name})
+			uname=$(f_toupper ${name})
+			hfile=$(f_tolower "include/${lname}_ns.h")
+			cfile=$(f_tolower "src/${lname}_ns.cpp")
+
+			echo "[ns] creating file ${hfile}" 
+			f_resetfile ${hfile}
+			f_resetfile ${cfile}
+			c_print_comment "${name}.h" >> ${hfile}
+			c_print_header_begin ${upname} ${name} >> ${hfile}
+
+cat<<EOF >> ${hfile}
+#include "${lpname}common.h"
+
+#define ${uname}_NSPATH "$(echo ${nspace} | sed -e 's,:,/,g')"
+EOF
+			f_print_nspace_begin "${nspace}" >> ${hfile}
+			echo "#include \"$(basename ${hfile})\"" >> ${phfile}
+			echo "#include \"$(basename ${hfile})\"" >> ${cfile}
+			c_print_comment "${name}.cpp" >> ${cfile}
+			f_print_nspace_begin "${nspace}" >> ${cfile}
+			param="${DEF_PROC_FUNC_PARAM}"
+			for fn in `echo $f_proc`; do
+				echo "${DEF_RET_PROC} ${fn}${param};" >> ${hfile}
+#				echo "[ns] creating file $hfile for function ${fn}" 
+				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${param}" >> ${cfile}
+			done
+			f_print_nspace_end "${nspace}" >> ${cfile}
+			f_print_nspace_end "${nspace}" >> ${hfile}
+			c_print_header_end ${upname} ${name} >> ${hfile}
+			mf_print_gcc "${lname}" "${cfile}" "$MF"
+		fi
+	done
+}
+
+process_ifile() {
+	file=${1}
+	pname=${2}
+	lpname=${3}
+	phfile=${4}
+	f_listifile_raw ${file} | while read name xcmd f_proc; do
 		if [ -n "$name" ] ; then
 			hfile=$(f_tolower "include/${name}.h")
 			cfile=$(f_tolower "src/${name}.cpp")
 			lname=$(f_tolower ${name})
+			xname=${name}
+			echo "[ifile] creating file ${hfile}" 
+			echo "#include \"${lname}.h\"" >> ${phfile}
 
 			f_resetfile ${hfile}
 			f_resetfile ${cfile}
@@ -578,18 +741,296 @@ cat<<EOF >> ${hfile}
 EOF
 			c_print_comment "${name}.cpp" >> ${cfile}
 			echo "#include \"${lname}.h\"" >> ${cfile}
-			param="(void *p)"
+			param="${DEF_PROC_FUNC_PARAM}"
 			for fn in `echo $f_proc`; do
-				echo "int ${fn}${param};" >> ${hfile}
-				c_print_cfunc "int" "${fn}" "${param}" >> ${cfile}
+				echo "${DEF_RET_PROC} ${fn}${param};" >> ${hfile}
+#				echo "[ifile] creating file $hfile for function ${fn}" 
+				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${param}" >> ${cfile}
+			done
+			echo "" >> ${cfile}
+			echo "" >> ${hfile}
+			c_print_header_end ${upname} ${name} >> ${hfile}
+			mf_print_gcc "${lname}" "${cfile}" "$MF"
+		fi
+	done
+}
+
+process_file() {
+	file=${1}
+	pname=${2}
+	lpname=${3}
+	phfile=${4}
+	f_listfile_raw ${file} | while read name f_proc; do
+		if [ -n "$name" ] ; then
+			hfile=$(f_tolower "include/${name}.h")
+			cfile=$(f_tolower "src/${name}.cpp")
+			lname=$(f_tolower ${name})
+			xname=${name}
+			echo "[file] creating file ${hfile}" 
+			echo "#include \"${lname}.h\"" >> ${phfile}
+
+			f_resetfile ${hfile}
+			f_resetfile ${cfile}
+			c_print_comment "${name}.h" >> ${hfile}
+			c_print_header_begin ${upname} ${name} >> ${hfile}
+
+cat<<EOF >> ${hfile}
+#include "${lpname}common.h"
+
+EOF
+			c_print_comment "${name}.cpp" >> ${cfile}
+			echo "#include \"${lname}.h\"" >> ${cfile}
+			param="${DEF_PROC_FUNC_PARAM}"
+			for fn in `echo $f_proc`; do
+				echo "${DEF_RET_PROC} ${xname}_${fn}${param};" >> ${hfile}
+#				echo "[file] creating file $hfile for function ${fn}" 
+				c_print_cfunc "${DEF_RET_PROC}" "${xname}_${fn}" "${param}" >> ${cfile}
 			done
 			echo "" >> ${cfile}
 
 			echo "" >> ${hfile}
 			c_print_header_end ${upname} ${name} >> ${hfile}
+			mf_print_gcc "${lname}" "${cfile}" "$MF"
 		fi
 	done
 }
+
+process_chdrv() {
+	file=${1}
+	pname=${2}
+	lpname=${3}
+	chpath="driver/char"
+	f_listchdrv_raw ${file} | while read name f_proc; do
+		if [ -n "$name" ] ; then
+			mkdir -p ${chpath}
+			hfile=$(f_tolower "${chpath}/${name}.h")
+			cfile=$(f_tolower "${chpath}/${name}.c")
+			lname=$(f_tolower ${name})
+			uname=$(f_toupper ${name})
+
+			f_resetfile ${hfile}
+			f_resetfile ${cfile}
+			c_print_comment "${name}.h" >> ${hfile}
+			c_print_header_begin ${upname} ${name} >> ${hfile}
+
+cat<<EOF >> ${hfile}
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/sched.h>
+#include <linux/init.h>
+#include <linux/slab.h>
+#include <linux/device.h>
+#include <linux/miscdevice.h>
+
+#define ${uname}_NAME "${lname}"
+
+EOF
+			c_print_comment "${name}.cpp" >> ${cfile}
+cat<<EOF >> ${cfile}
+#include <linux/module.h>
+#include <linux/interrupt.h>
+
+#include "$(basename ${hfile})"
+
+static struct device *${lname}_dev;
+static char *ramdisk;
+static size_t ramdisk_size = (16 * PAGE_SIZE);
+
+static const struct file_operations ${lname}_fops;
+
+/* #define MAXIRQS 256 */
+#define MAXIRQS nr_irqs
+
+#define NCOPY (MAXIRQS * sizeof(int))
+
+static int *interrupts;
+
+static irqreturn_t ${lname}_interrupt(int irq, void *dev_id)
+{
+	interrupts[irq]++;
+	return IRQ_NONE;	/* we return IRQ_NONE because we are just observing */
+}
+
+static void freeup_irqs(void)
+{
+	int irq;
+	for (irq = 0; irq < MAXIRQS; irq++) {
+		if (interrupts[irq] >= 0) {	/* if greater than 0, was able to share */
+			synchronize_irq(irq);
+			dev_info(${lname}_dev,
+				 "Freeing IRQ= %4d, which had %10d events\n",
+				 irq, interrupts[irq]);
+			free_irq(irq, interrupts);
+		}
+	}
+}
+
+static void get_irqs(void)
+{
+	int irq;
+	interrupts = (int *)ramdisk;
+
+	for (irq = 0; irq < MAXIRQS; irq++) {
+		interrupts[irq] = -1;	/* set to -1 as a flag */
+		if (!request_irq
+		    (irq, ${lname}_interrupt, IRQF_SHARED, "${lname}_int", interrupts)) {
+			interrupts[irq] = 0;
+			dev_info(${lname}_dev, "Succeded in registering IRQ=%d\n",
+				 irq);
+		}
+	}
+}
+EOF
+			param="(void *p)"
+			ret="static inline int"
+			for fn in `echo $f_proc`; do
+				echo "${ret} ${lname}_${fn}${param};" >> ${hfile}
+				echo "[driver] creating file $hfile for function ${fn}" 
+				c_print_cfunc "${ret}" "${lname}_${fn}" "${param}" >> ${cfile}
+			done
+cat<<EOF >> ${cfile}
+
+static inline int ${lname}_open(struct inode *inode, struct file *file)
+{
+	static int counter;
+	dev_info(${lname}_dev, " attempting to open device: %s:\n", ${uname}_NAME);
+	dev_info(${lname}_dev, " MAJOR number = %d, MINOR number = %d\n",
+		 imajor(inode), iminor(inode));
+	counter++;
+
+	dev_info(${lname}_dev, " successfully open  device: %s:\n\n", ${uname}_NAME);
+	dev_info(${lname}_dev, "I have been opened  %d times since being loaded\n",
+		 counter);
+	dev_info(${lname}_dev, "ref=%d\n", (int)module_refcount(THIS_MODULE));
+
+	return 0;
+}
+
+static inline int ${lname}_release(struct inode *inode, struct file *file)
+{
+	dev_info(${lname}_dev, " closing device: %s:\n\n", ${uname}_NAME);
+	return 0;
+}
+/* just to show how to use the simple_read/write functions */
+
+static inline ssize_t ${lname}_read(struct file *file, char __user * buf,
+					  size_t lbuf, loff_t * ppos)
+{
+	int nbytes =
+	    simple_read_from_buffer(buf, lbuf, ppos, ramdisk, ramdisk_size);
+	dev_info(${lname}_dev, "Leaving the   READ function, nbytes=%d, pos=%d\n",
+		 nbytes, (int)*ppos);
+	return nbytes;
+
+}
+
+static inline ssize_t ${lname}_write(struct file *file,
+					   const char __user * buf, size_t lbuf,
+					   loff_t * ppos)
+{
+	int nbytes =
+	    simple_write_to_buffer(ramdisk, ramdisk_size, ppos, buf, lbuf);
+	dev_info(${lname}_dev, "Leaving the   WRITE function, nbytes=%d, pos=%d\n",
+		 nbytes, (int)*ppos);
+	return nbytes;
+}
+static inline loff_t ${lname}_lseek(struct file *file, loff_t offset,
+					  int orig)
+{
+	loff_t testpos;
+	switch (orig) {
+	case SEEK_SET:
+		testpos = offset;
+		break;
+	case SEEK_CUR:
+		testpos = file->f_pos + offset;
+		break;
+	case SEEK_END:
+		testpos = ramdisk_size + offset;
+		break;
+	default:
+		return -EINVAL;
+	}
+	testpos = testpos < ramdisk_size ? testpos : ramdisk_size;
+	testpos = testpos >= 0 ? testpos : 0;
+	file->f_pos = testpos;
+	dev_info(${lname}_dev, "Seeking to pos=%ld\n", (long)testpos);
+	return testpos;
+}
+
+static const struct file_operations ${lname}_fops = {
+	.owner = THIS_MODULE,
+	.read = ${lname}_read,
+	.open = ${lname}_open,
+	.release = ${lname}_release,
+	.write = ${lname}_write,
+	.llseek = ${lname}_lseek,
+};
+
+static struct miscdevice ${lname}_device = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = ${uname}_NAME,
+	.fops = &${lname}_fops,
+};
+static int __init ${lname}_init(void)
+{
+	ramdisk = kmalloc(ramdisk_size, GFP_KERNEL);
+	if (misc_register(&${lname}_device)) {
+		pr_err("Couldn't register device misc, "
+		       "%d.\n", ${lname}_device.minor);
+		kfree(ramdisk);
+		return -EBUSY;
+	}
+	${lname}_dev = ${lname}_device.this_device;
+	dev_info(${lname}_dev, "Succeeded in registering device %s\n", ${uname}_NAME);
+	get_irqs();
+	return 0;
+}
+
+static void __exit ${lname}_exit(void)
+{
+	freeup_irqs();
+	dev_info(${lname}_dev, "Unregistering Device\n");
+	misc_deregister(&${lname}_device);
+	kfree(ramdisk);
+}
+
+module_init(${lname}_init);
+module_exit(${lname}_exit);
+
+MODULE_AUTHOR("${USER}");
+MODULE_DESCRIPTION("${lname}");
+MODULE_LICENSE("GPL v2");
+
+EOF
+			echo "" >> ${hfile}
+			c_print_header_end ${upname} ${name} >> ${hfile}
+		fi
+cat<<EOF > ${chpath}/Makefile
+obj-m +=  ${lname}.o
+
+export KROOT=/lib/modules/$(uname -r)/build
+
+allofit:  userprogs modules
+modules:
+	@\$(MAKE) -C \$(KROOT) M=\$(shell pwd) modules
+modules_install:
+	@\$(MAKE) -C \$(KROOT) M=\$(shell pwd) modules_install
+kernel_clean:
+	@\$(MAKE) -C \$(KROOT) M=\$(shell pwd) clean
+
+#userprogs:
+#	@\$(MAKE) \
+#		CFLAGS="-O2 -Wall -pedantic -pthread" \
+#	 ${lname}_test
+
+clean: kernel_clean
+	rm -rf  ${lname}_test  Module.symvers modules.order
+EOF
+	done
+}
+
 
 sh_create_version() {
 	sh_print_version  > scripts/version
@@ -608,20 +1049,83 @@ mf_print() {
 	echo "	$3"
 }
 
+mf_print_gcc() {
+	lname=${1}
+	cfile=${2}
+	mf=$MF
+	mf_print "obj/${lname}.o" "${cfile}" "g++ -g -std=c++11 -Wall -I./include -c ${cfile} -o obj/${lname}.o" >> $mf
+	mf_print "obj/${lname}.lo" "${cfile}" "g++ -g -c -std=c++11 -fPIC -Wall -I./include ${cfile} -o obj/${lname}.lo" >> $mf
+	f_replace "all: " "all: obj/${lname}.o " $mf
+	f_replace "lib: " "lib: obj/${lname}.lo " $mf
+}
+
 f_listtest_raw() {
 	file=${1}
-	cat ${file} | awk '/^#test\s/' | sed -e 's,#test,,g'
+	cat ${file} | awk '/^test\s/' > $TMPDIR/test.tmp
+	f_update_def "${file}" "test.tmp"
+	cat $TMPDIR/test.tmp | while read keyw flist ; do
+		echo "${flist}"
+	done
+	rm $TMPDIR/test.tmp
+}
+
+f_listnsfile_raw() {
+	file=${1}
+	cat ${file} | awk '/^ns\s/' > $TMPDIR/ns.tmp
+	f_update_def "${file}" "ns.tmp"
+	cat $TMPDIR/ns.tmp | while read keyw nspace file flist ; do
+		echo "${nspace} ${file} ${flist}"
+	done
+	rm $TMPDIR/ns.tmp
+}
+
+f_update_def() {
+	file=${1}
+	tfile=${2}
+	cat ${file} | awk '!/^#/' | awk '/^def\s/' | while read keyw txt f_memb ; do
+		def="$(echo "${txt}" | sed -e 's/=//g')"
+		prefix=$(echo "${def}" | awk -F':' '{print $2}')
+		def=$(echo "${def}" | awk -F':' '{print $1}')
+#		echo "1pre=(${prefix}) def=(${def}) "
+		fcalls=$(f_prefix_line "${f_memb}" "${prefix}")
+
+		f_replace "\[${def}\]" "${fcalls}"  $TMPDIR/${tfile}
+	done
+}
+
+f_listifile_raw() {
+	file=${1}
+	cat ${file} | awk '/^ifile\s/' > $TMPDIR/ifile.tmp
+	f_update_def "${file}" "ifile.tmp"
+	cat $TMPDIR/ifile.tmp | while read keyw name cmd flist ; do
+		echo "${name} ${cmd} ${flist}"
+	done
+	rm $TMPDIR/ifile.tmp
 }
 
 f_listfile_raw() {
 	file=${1}
-	cat ${file} | awk '/^#file\s/' | sed -e 's,#file,,g'
+	cat ${file} | awk '/^file\s/' > $TMPDIR/file.tmp
+	f_update_def "${file}" "file.tmp"
+	cat $TMPDIR/file.tmp | while read keyw name flist ; do
+		echo "${name} ${flist}"
+	done
+	rm $TMPDIR/file.tmp
+}
+
+f_listchdrv_raw() {
+	file=${1}
+	cat ${file} | awk '/^driver\s/' | while read keyw name flist ; do
+		echo "${name} ${flisst}"
+	done
 }
 
 f_listorder_raw() {
 	file=${1}
 	keyw=${2}
-	cat ${file} | awk '/^#order\s/' | grep "${keyw}" | sed -e 's,#order,,g'
+	cat ${file} | awk '/^order\s/' | grep "${keyw}" | while read other xclass ; do
+		echo "${xclass}"
+	done
 }
 
 f_listorder() {
@@ -644,26 +1148,46 @@ f_listorder() {
 f_listdefault() {
 	file=${1}
 	keyw=${2}
-	cat ${file} | awk '/^#ret\s/' | grep "${keyw}" | awk -F'=' '{print $2}'
+	cat ${file} | awk '/^ret\s/' | grep "${keyw}" | awk -F'=' '{print $2}'
 }
 
 f_listclass() {
 	file=${1}
 	clist=${2}
-#	cat ${file} | egrep -v "^#rem" | awk '/class\s/'
-	cat ${file} | awk '!/^#rem/' | awk '/class\s/'
+	cat ${file} | awk '!/^#/' | awk '/^class\s|^iclass\s/' \
+		| sed -e "s/{IO}/${CLASS_IO}/" \
+		| sed -e "s/{GI}/${CLASS_GI}/" \
+		| sed -e "s/{ST}/${CLASS_ST}/" \
+		| sed -e "s/{DB}/${CLASS_DB}/" \
+		| sed -e "s/{SS}/${CLASS_SS}/" \
+		| sed -e "s/{OC}/${CLASS_OC}/" \
+		| sed -e "s/{NET}/${CLASS_NET}/" \
+		| sed -e "s/{SR}/${CLASS_SR}/" \
+		| sed -e "s/{RW}/${CLASS_RW}/" \
+		| sed -e "s/{GS}/${CLASS_GS}/" > $TMPDIR/cl.tmp
+	f_update_def "${file}" "cl.tmp"
+	cat $TMPDIR/cl.tmp
+	rm $TMPDIR/cl.tmp
 	for f in `echo ${clist}` ; do
-		echo "class ${f}"
+		echo "iclass ${f}"
 	done
 }
 
 f_listmembers() {
-	cat ${1} | awk '!/^#rem/' | awk "/class\s${2}\s/ {flag=1;next} /class/{flag=0} flag {print}" 
+	cat ${1} | awk '!/^#/' | awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
 }
 
 f_replace() {
-#	echo "replace (${1}) with (${2}) in file (${3})"
+#	echo "replace ${1} with ${2}"
 	sed -i "s,${1},${2},g" ${3}
+}
+
+f_prefix_line() {
+	echo " ${1}" | sed -e "s/ / ${2}/g"
+}
+
+f_sufix_line() {
+	echo "${1}" | sed -e "s/ /${2} /g"
 }
 
 f_tolower() {
@@ -679,14 +1203,54 @@ f_resetfile() {
 	echo -n > $1
 }
 
+TMPDIR=`mktemp -d /tmp/GEN_${USER}.XXXXXX`
 case "$1" in
 	-noop)
 		shift
+		echo -n > $TMPDIR/noop.tmp
+		cat $HOME/Public/ws/pasa/demo/me/tmp/Hello.spec | awk '/^file\s/' > $TMPDIR/noop.tmp
+		cat $TMPDIR/noop.tmp
+		echo "^before"
+		f_update_def "Hello.spec" "noop.tmp"
+		echo "^calc"
+		cat $TMPDIR/noop.tmp
+		echo "^after"
+		rm $TMPDIR/noop.tmp
+	;;
+	-h|-help|--help)
+cat<<EOF
+usage: gen FILE.spec or gen SPECNAME
+	ex: gen
+		this will create Hello.spec in cwd
+	ex: gen /path/to/MySpec.spec
+		this will copy spec file to ./myspec and create stub project there
+	ex: gen MySpec
+		this assumes MySpec.spec in GEN_SPEC_HOME enviroment
+		and will copy spec file to ./myspec and create stub project there
+	ex: gen /path/to/MySpec.spec /other/path/
+		this will create stub project in /other/path/
+	ex: gen MySpec.spec ./
+		to create a stub project in local dir
+
+	note:
+	when remote dir is not given a copy of spec file will be 
+	place in stub project dir
+EOF
 	;;
 	-gen)
 		shift
-		echo "creating Hello.spec"
-		c_print_template > Hello.spec
+		echo "gen Hello.spec created"
+		c_print_template "hello" "Hello"  > Hello.spec
+	;;
+	-l)
+		if [ -n "${GEN_SPEC_HOME}" ] ; then
+			echo "GEN_SPEC_HOME=${GEN_SPEC_HOME}"
+			ls ${GEN_SPEC_HOME} | while read file ; do
+				echo "${file} $(awk '/^#/' ${GEN_SPEC_HOME}/$file | sed 's/#//g' | head -1)"
+			done
+		else
+			echo "GEN_SPEC_HOME is not set"
+		fi
 	;;
 	-r)
 		shift
@@ -706,6 +1270,19 @@ case "$1" in
 			exit 0
 		fi
 		SPEC_FILE=$1
+		file="${SPEC_FILE}"
+		if [ ! -r "$file" ] ; then
+			file="${GEN_SPEC_HOME}/${SPEC_FILE}"
+			if [ ! -r "$file" ] ; then
+				file="${GEN_SPEC_HOME}/${SPEC_FILE}.spec"
+				if [ ! -r "$file" ] ; then
+					echo "file not found"
+					exit 1
+				fi
+			fi
+		fi
+		SPEC_FILE="${file}"
+		echo "spec: ${SPEC_FILE}"
 		pname=$(basename $SPEC_FILE .spec)
 		lpname=$(f_tolower $pname)
 		upname=$(f_toupper $pname)
@@ -722,10 +1299,10 @@ case "$1" in
 		echo -n > include/version.h
 		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/version.h
 
-		process_file ${SPEC_FILE} "${pname}" "${lpname}"
-		process_test ${SPEC_FILE} "${pname}" "${lpname}"
 		process_wget ${SPEC_FILE}
 		process_git ${SPEC_FILE}
+		process_chdrv ${SPEC_FILE} "${pname}" "${lpname}"
+		process_test ${SPEC_FILE} "${pname}" "${lpname}"
 
 		MF=Makefile
 		f_resetfile $MF
@@ -742,30 +1319,33 @@ case "$1" in
 		awk '/^#include\s/' ${SPEC_FILE} >> ${phfile}
 		echo "" >> ${phfile}
 		echo "#include \"${lpname}common.h\"" >> ${phfile}
+		process_file ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
+		process_ifile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
+		process_nsfile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		f_listclass $SPEC_FILE "${pname}Object ${pname}Global" | while read keyw cname other ; do
 			lname=$(f_tolower $cname)
 			hfile=include/${lname}.h
 			cfile=src/${lname}.cpp
 			echo "creating file $hfile for class $cname" 
-			c_spec_header "${pname}" "${cname}" "${cname}.h" "${other}" > ${hfile}
+			c_spec_header "${pname}" "${cname}" "${cname}.h" "${other}" "${keyw}" > ${hfile}
 			c_spec_body "${pname}" "${cname}" "${cname}.cpp" "${other}" > ${cfile}
-			mf_print "obj/${lname}.o" "${cfile}" "g++ -g -std=c++11 -Wall -I./include -c ${cfile} -o obj/${lname}.o" >> $MF
-			mf_print "obj/${lname}.lo" "${cfile}" "g++ -g -c -std=c++11 -fPIC -Wall -I./include ${cfile} -o obj/${lname}.lo" >> $MF
-			f_replace "all: " "all: obj/${lname}.o " $MF
-			f_replace "lib: " "lib: obj/${lname}.lo " $MF
+			mf_print_gcc "${lname}" "${cfile}" "$MF"
 			echo "#include \"${lname}.h\"" >> ${phfile}
 		done
+		mfile="src/main_${lpname}.cpp"
 		echo "" >> ${phfile}
 		c_print_header_end ${upname} ${upname} >> ${phfile}
 		c_spec_common_header "${lpname}" > include/${lpname}common.h
-		c_spec_main_body "${lpname}" > src/main.cpp
+		c_spec_main_body "${lpname}" > ${mfile}
 		c_remove_parent "${pname}" "include/${lpname}object.h"
 		c_remove_parent "${pname}" "include/${lpname}global.h"
 
 		echo "" >> $MF
-		mf_print "${lpname}" "src/main.cpp lib/lib${lpname}.so" "g++ -g -I./include -L./lib -Wall -D${upname}_VERSION=\\\"\$(${upname}_VERSION)\\\" src/main.cpp -l${lpname} -o bin/${lpname} " >> $MF
+		mf_print "${lpname}" "${mfile} lib/lib${lpname}.so" "g++ -g -I./include -L./lib -Wall -D${upname}_VERSION=\\\"\$(${upname}_VERSION)\\\" ${mfile} -l${lpname} -o bin/${lpname} " >> $MF
 		mf_print "clean" " " "rm -f obj/*.o obj/*.lo bin/${lpname} lib/lib${lpname}*.so*" >> $MF
+		mf_print "wipe" "${pname}.spec" "rm -fR ./bin/* ./lib/* ./obj/* ./src/* ./include/* ./out/* ./test/*" >> $MF
 
 		process_repo ${SPEC_FILE} "${pname}"
 	;;
 esac
+rmdir $TMPDIR
