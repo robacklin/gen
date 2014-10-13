@@ -708,11 +708,13 @@ process_repo() {
 		if [ -n "${keyw}" ] ; then
 			if [ ! -d ".git" ] ; then
 				git init
+				git add --ignore-removal bin/ obj/ out/ lib/
 cat<<EOF > .gitignore
-./bin/*
-./lib/*
-./obj/*
-./out/*
+bin/*
+dl/*
+lib/*
+obj/*
+out/*
 EOF
 				git add ./
 				git commit -a -m "initial commit" 2>&1 > /dev/null
