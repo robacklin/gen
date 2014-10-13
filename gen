@@ -9,7 +9,7 @@ DEF_CLASS_FUNC_PARAM="(void *p)"
 DEF_PROC_FUNC_PARAM="(void *p)"
 CLASS_GI=" getInstance m_pInstance "
 CLASS_ST=" enter exit transition getEvent setEvent getState setState getName setName m_pName m_nState m_iState m_iNext m_iPrev "
-CLASS_DB=" select update delete insert alter drop create query m_pTable m_pDb m_pCur m_iConn "
+CLASS_DB=" query m_iConnection m_iDatabase m_iTable m_iRow m_iColumn m_pCurrent m_pNext  "
 CLASS_SS=" start stop run join wait waitCond process worker m_nThread m_iThread m_pThread m_bRun "
 CLASS_OC=" open close isOpen m_pFile m_iFile m_pHandle m_bOpen "
 CLASS_NET=" connect disconnect listen accept bind select setTimeout getTimeout m_pSocket m_iSocket m_iServer m_iClient m_bServer m_bClient m_bInet m_bUnix "
@@ -22,66 +22,130 @@ c_print_template() {
 	lname=${1}
 	name=${2}
 cat<<EOF
-#created on $(date +%F) by $USER
-#{GI} ${CLASS_GI}
-#{ST} ${CLASS_ST}
-#{DB} ${CLASS_DB}
-#{SS} ${CLASS_SS}
-#{OC} ${CLASS_OC}
-#{NET} ${CLASS_NET}
-#{SR} ${CLASS_SR}
-#{RW} ${CLASS_RW}
-#{GS} ${CLASS_GS}
-#{IO} ${CLASS_IO}
+# created on $(date +%F) by $USER
+# these are built-in def, only use in classes
+# {GI} ${CLASS_GI}
+# {ST} ${CLASS_ST}
+# {DB} ${CLASS_DB}
+# {SS} ${CLASS_SS}
+# {OC} ${CLASS_OC}
+# {NET} ${CLASS_NET}
+# {SR} ${CLASS_SR}
+# {RW} ${CLASS_RW}
+# {GS} ${CLASS_GS}
+# {IO} ${CLASS_IO}
 
-#will git init and place git diff in test scripts
+# this will create a git repo in the new project 
+# and it checkin on every re-run on gen
 repo yes
 
-#cpp|c#|java|qt
+# stubs to generate (cpp|c#|java|qt) currently only c/c++ supported
 lang cpp
   	
+# in some cases dependency are needed.
+# these will download to the 'dl' folder
+# wget <URL> <DIRNAME>
 wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
+# git <URL> <DIRNAME> <BRANCH>
 git https://github.com/acklinr/ip_interface.git ip_interace master
 
-#linux char driver ${name} (not added to Makefile)
+# in some cases we need linux driver support
+# this will create a stub char driver with its own Makefile
+#driver <DRIVER NAME> [<PROC>|<DEF> ...]
 driver ${name} my_func1 my_func2
 
-def rw= read write
-def foxy:my_= open close
-#create ${lname}_os.h & ${lname}_os.cpp with procedures ${lname}_os_*
-file ${lname}_os [foxy] [rw]
-file ${lname}_helpers
+# these are local defines, if prefix given then applied to procedure
+# def <VARNAME>= [<PROC> ...]
+def rw= open close read write
 
+# def <VARNAME>:<PREFIX>= [<PROC> ...]
+def foxy:state_= enter exit trans error event
 def csm:Pas= CreateStateMachine
 def pas:PasOn= Initialization Destroy Start Stop DebugDump
-ifile Dispatcher {cmd} [pas] [csm]
 
-#namespace file
-ns NameSpace1:${name}:MQueue msg_q open close [rw]
+# create both header and source for a context
+# and place a filename prefix on procedure (ex:${lname}_os_log)
+# file <FILENAME> [<PROC>|<DEF> ...]
+file ${lname}_os [foxy] onerror log [rw] 
+file ${lname}_helpers
 
-#test scripts are created for below
+# re-define the stub parameters
+# par <VARNAME>= <PARAM...> 
+par pm= (void* data, int val)
+
+# create both header and soruce for a context
+# and allow the parameters to be set
+# unlike 'file' ifile does NOT place prefix on procedures 
+# ifile <FILENAME> <VARNAME> [<PROC>|<DEF> ...]
+ifile Dispatcher {pm} log [pas] error [csm]
+ifile DefParamFn {} [pas] [csm] log
+ifile BlankFn
+
+# creates a file that is included in namespace
+# file becomes <FILENAME>_ns.* w/o prefix on procedure
+# ns <NAMESPACE PATH:...> <FILENAME> [<PROC>|<DEF> ...]
+ns NameSpace1:${name}:MQueue msg_q open close [foxy]
+
+# test procedure and script are created by default for all class
+# but here we add some extra cases we what to check for in main_${lname}.cpp
+# test [<TEST_NAME1>|<DEV> ...]
 test [rw] file_close bad_filename dbl_close no_filename
 
+# these are the includes that we think we might need
+# and they will be copied to each class header and common header
 #include <string>
 #include <iostream> 
 
+# these are the defines that we think we might need
+# and they will be copied to the common header
 #define _RELEASE 0
 
+# these are the typedef that we think we might need
+# and they will be copied to the common header
+# they also allow the code to compile when used by classes
 typedef std::string String;
+
+# we need to setup a default return value for class 
+# procedures that make use of typedef or structs values
 ret String = "hello world";
 
+# these are the structs that we think we might need
+# and they will be copied to the common header
 struct MyStruct { int Val; }; 
 
-class MyClassParent {OC} m_nValue [rw]
+# class <CLASSNAME> [<PROC>|<DEF>]
+# iclass <CLASSNAME> [<PROC>|<DEF>]
+# vclass <CLASSNAME> [<PROC>|<DEF>]
+# and/or followed by redefined memebers { ... }
+
+# this class uses a pointer var along with built-in and local def 
+class MyClassParent {OC} m_nValue [foxy]
+
+# this class begins with 'I' hence Interface class
+# virtual is applied until a var is listed
 class IMyClass {GS} m_isInterfaceClass
+
+# assumes: member var (m_*), pointer (m_p*), bool (m_b*)
+# headers are auto included when a class is returned be procedure
 class MyClass m_iVar MyFunc OurFunc {SR}
 {
 	IMyClass* m_iVar
 	String MyFunc OurFunc?open|close
 	MyStruct* OurFunc m_iVar->get
 }
+
+# all procedures are virtual in 'iclass'
 iclass YourClassIf {IO} m_isInterfaceClass
+
+# example of built-in def
 class YourClass {RW} {GI}
+
+# all procedures are 'pure' virtual in 'vclass'
+# and all member var are dropped
+vclass PureVirtualClass [rw] m_pInterface
+
+# here we re-order the class inheritance
+# order [<CLASSMAP>...]
 order MyClass:MyClassParent YourClass:MyClassParent
 order MyClassParent:IMyClass
 
@@ -90,6 +154,9 @@ EOF
 }
 
 c_print_testfunc() {
+	if [ "${4}" = "vclass" ] ; then
+		return
+	fi
 	if [ -n "${2}" ] ; then
 cat<<EOF
 
@@ -171,7 +238,7 @@ EOF
 	f_listclass ${SPEC_FILE} | while read class name other ; do
 		lname=$(f_tolower $name)
 		ltest=$(f_tolower "test/test_${lname}")
-		c_print_testfunc "${lname}" "${name}" "${other}"
+		c_print_testfunc "${lname}" "${name}" "${other}" "${class}"
 		sh_print_testfunc ${name} ${lpname} > $ltest
 		chmod a+x $ltest
 	done
@@ -201,8 +268,10 @@ int main(int argc, char** argv)
 EOF
 
 	f_listclass ${SPEC_FILE} | while read class name other ; do
-		lname=$(echo $name | tr  '[:upper:]' '[:lower:]')
-		echo "		{\"-test=${name}\", &test_${lname}, 1},"
+		if [ "${class}" != "vclass" ] ; then
+			lname=$(echo $name | tr  '[:upper:]' '[:lower:]')
+			echo "		{\"-test=${name}\", &test_${lname}, 1},"
+		fi
 	done
 	f_listtest_raw ${SPEC_FILE} | while read f_test; do
 		if [ -n "$f_test" ] ; then
@@ -259,6 +328,7 @@ c_spec_body() {
 	cname=${2}
 	file=${3}
 	other=${4}
+	keyw=${5}
 	lcname=$(f_tolower ${cname})
 	c_print_comment "${lcname}.cpp"
 cat<<EOF
@@ -266,6 +336,9 @@ cat<<EOF
 #include "${lcname}.h"
 
 EOF
+	if [ "${keyw}" = "vclass" ] ; then
+		return
+	fi
 	c_print_ctor ${cname} "ctor-${cname}"
 	c_print_dtor ${cname} "dtor-${cname}"
 	for f in `echo ${other}` ; do
@@ -357,9 +430,14 @@ c_spec_header_class_body()
 		fi
 	fi
 	echo "" 
+	echo "typedef void* ptr${cname}Type;" 
+	echo "" 
 	c_spec_header_class_begin "${cname}" "${pname}" "${parent}"
 	echo "${cname}" | egrep "^I" 2>&1 > /dev/null
 	if [ "$?" = 0 ] ; then
+		virt="virtual "
+	fi
+	if [ "${keyw}" = "vclass" ] ; then
 		virt="virtual "
 	fi
 cat<<EOF
@@ -369,12 +447,18 @@ EOF
 	ret="${DEF_RET}"
 	param=""
 	text="unknown"
+	pvirt=""
 	for fname in `echo ${other}` ; do
 		text="function"
-		param=${DEF_CLASS_FUNC_PARAM}
+#param=${DEF_CLASS_FUNC_PARAM}
+		param="(ptr${cname}Type data)"
 		ret="${DEF_RET}"
 		if [ "${keyw}" = "iclass" ] ; then
 			virt="virtual "
+		fi
+		if [ "${keyw}" = "vclass" ] ; then
+			virt="virtual "
+			pvirt=" = 0"
 		fi
 		echo "${fname}" | grep "^m_" 2>&1 > /dev/null
 		if [ "$?" = 0 ] ; then
@@ -397,13 +481,13 @@ EOF
 			param=""
 			virt=""
 		fi
-		newret=$(f_listmembers ${SPEC_FILE} ${cname} | awk '{print $2, $1}' | egrep "^${fname}" | awk '{print $2}' | head -1)
+		newret=$(f_listmembers ${SPEC_FILE} ${cname} | awk '{print $2, $1}' | egrep "^${fname}\s" | awk '{print $2}' | sort | head -1)
 		if [ -n "$newret" ] ; then
 			ret=${newret}
 			virt=""
 		fi
 cat<<EOF
-	${virt}$ret ${fname}${param}; /**< ${fname} ${virt}member ${text} */
+	${virt}${ret} ${fname}${param}${pvirt}; /**< ${fname} ${virt}member ${text} */
 EOF
 	done
 	c_spec_header_class_end
@@ -539,8 +623,10 @@ c_print_member() {
 	;;
   	esac	
 
+#	def_param="${DEF_CLASS_FUNC_PARAM}"
+	def_param="(ptr${cname}Type data)"
 cat<<EOF
-${ret} ${cname}::${fname}${DEF_CLASS_FUNC_PARAM}
+${ret} ${cname}::${fname}${def_param}
 {
 		LOG_TRACE(" enter ");
 		/* ${fcalls} */	
@@ -721,7 +807,8 @@ process_ifile() {
 	pname=${2}
 	lpname=${3}
 	phfile=${4}
-	f_listifile_raw ${file} | while read name xcmd f_proc; do
+	specf=${file}
+	f_listifile_raw ${file} | while read name parm f_proc; do
 		if [ -n "$name" ] ; then
 			hfile=$(f_tolower "include/${name}.h")
 			cfile=$(f_tolower "src/${name}.cpp")
@@ -739,17 +826,24 @@ cat<<EOF >> ${hfile}
 #include "${lpname}common.h"
 
 EOF
+			xparm=""
 			c_print_comment "${name}.cpp" >> ${cfile}
 			echo "#include \"${lname}.h\"" >> ${cfile}
-			param="${DEF_PROC_FUNC_PARAM}"
+			if [ -n "${parm}" ] ; then
+				xparm=$(echo "${parm}" | sed -e 's/{//g' -e 's/}//g')
+				xparm=$(f_listpar "${specf}" "${xparm}"|head -1)
+			fi
+			if [ ! -n "${xparm}" ] ; then
+				xparm="${DEF_PROC_FUNC_PARAM}"
+			fi
 			for fn in `echo $f_proc`; do
-				echo "${DEF_RET_PROC} ${fn}${param};" >> ${hfile}
+				echo "${DEF_RET_PROC} ${fn}${xparm};" >> ${hfile}
 #				echo "[ifile] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${param}" >> ${cfile}
+				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${xparm}" >> ${cfile}
 			done
 			echo "" >> ${cfile}
 			echo "" >> ${hfile}
-			c_print_header_end ${upname} ${name} >> ${hfile}
+			c_print_header_end ${upname} ${xname} >> ${hfile}
 			mf_print_gcc "${lname}" "${cfile}" "$MF"
 		fi
 	done
@@ -1069,6 +1163,12 @@ f_listtest_raw() {
 	rm $TMPDIR/test.tmp
 }
 
+f_comment_split() {
+#TODO split comment in to blocks /**/ /**/ /**/ ....
+	comment=${1}
+	echo "/* ${comment} */"
+}
+
 f_listnsfile_raw() {
 	file=${1}
 	cat ${file} | awk '/^ns\s/' > $TMPDIR/ns.tmp
@@ -1091,6 +1191,12 @@ f_update_def() {
 
 		f_replace "\[${def}\]" "${fcalls}"  $TMPDIR/${tfile}
 	done
+}
+
+f_listpar() {
+	file=${1}
+	filter=${2}
+	cat "${file}" | awk "/^par\s${filter}=\s/" | sed -e "s/^par\s${filter}=\s//g"
 }
 
 f_listifile_raw() {
@@ -1151,10 +1257,14 @@ f_listdefault() {
 	cat ${file} | awk '/^ret\s/' | grep "${keyw}" | awk -F'=' '{print $2}'
 }
 
+f_list_deldup() {
+	echo "${1}" | grep -o '\w*' | sort -u | tr '\n' ' '
+}
+
 f_listclass() {
 	file=${1}
 	clist=${2}
-	cat ${file} | awk '!/^#/' | awk '/^class\s|^iclass\s/' \
+	cat ${file} | awk '!/^#/' | awk '/^class\s|^iclass|^vclass\s/' \
 		| sed -e "s/{IO}/${CLASS_IO}/" \
 		| sed -e "s/{GI}/${CLASS_GI}/" \
 		| sed -e "s/{ST}/${CLASS_ST}/" \
@@ -1264,6 +1374,26 @@ EOF
 			$0 -r `pwd`
 		fi
 	;;
+	-e)
+		shift
+		SPEC_FILE=$1
+		file="${SPEC_FILE}"
+		if [ ! -r "$file" ] ; then
+			file="${SPEC_FILE}.spec"
+			if [ ! -r "$file" ] ; then
+				file="${GEN_SPEC_HOME}/${SPEC_FILE}"
+				if [ ! -r "$file" ] ; then
+					file="${GEN_SPEC_HOME}/${SPEC_FILE}.spec"
+					if [ ! -r "$file" ] ; then
+						echo "file not found"
+						exit 1
+					fi
+				fi
+			fi
+		fi
+		SPEC_FILE="${file}"
+		vim ${SPEC_FILE}
+	;;
 	*)
 		if [ ! -n "$1" ] ; then
 			$0 -gen
@@ -1272,12 +1402,15 @@ EOF
 		SPEC_FILE=$1
 		file="${SPEC_FILE}"
 		if [ ! -r "$file" ] ; then
-			file="${GEN_SPEC_HOME}/${SPEC_FILE}"
+			file="${SPEC_FILE}.spec"
 			if [ ! -r "$file" ] ; then
-				file="${GEN_SPEC_HOME}/${SPEC_FILE}.spec"
+				file="${GEN_SPEC_HOME}/${SPEC_FILE}"
 				if [ ! -r "$file" ] ; then
-					echo "file not found"
-					exit 1
+					file="${GEN_SPEC_HOME}/${SPEC_FILE}.spec"
+					if [ ! -r "$file" ] ; then
+						echo "file not found"
+						exit 1
+					fi
 				fi
 			fi
 		fi
@@ -1326,9 +1459,10 @@ EOF
 			lname=$(f_tolower $cname)
 			hfile=include/${lname}.h
 			cfile=src/${lname}.cpp
+			other="$(f_list_deldup "${other}")"
 			echo "creating file $hfile for class $cname" 
 			c_spec_header "${pname}" "${cname}" "${cname}.h" "${other}" "${keyw}" > ${hfile}
-			c_spec_body "${pname}" "${cname}" "${cname}.cpp" "${other}" > ${cfile}
+			c_spec_body "${pname}" "${cname}" "${cname}.cpp" "${other}" "${keyw}" > ${cfile}
 			mf_print_gcc "${lname}" "${cfile}" "$MF"
 			echo "#include \"${lname}.h\"" >> ${phfile}
 		done
