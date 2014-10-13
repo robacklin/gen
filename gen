@@ -132,6 +132,7 @@ class MyClass m_iVar MyFunc OurFunc {SR}
 	IMyClass* m_iVar
 	String MyFunc OurFunc?open|close
 	MyStruct* OurFunc m_iVar->get
+	\$MyInnerClass proc1 proc2
 }
 
 # all procedures are virtual in 'iclass'
@@ -314,10 +315,13 @@ cat<<EOF
 #define LOG_TRACE(VAR_A) std::cout << "[TRACE] (" << __FUNCTION__ << ":" << __LINE__ << ") " << VAR_A << std::endl; 
 
 EOF
+	echo "/* define common section */" 
 	awk '/^#define\s/' ${SPEC_FILE} 
 	echo "" 
+	echo "/* typedef common section */" 
 	awk '/^typedef\s/' ${SPEC_FILE}
 	echo "" 
+	echo "/* struct common section */" 
 	awk '/^struct\s/' ${SPEC_FILE}
 	echo "" 
 	c_print_header_end ${lpname} ${cname}
@@ -362,6 +366,7 @@ EOF
 c_spec_print_includes() {
 	cname=${1}
 	pname=${2}
+	prev_lname=""
 	f_listclass ${SPEC_FILE} | sort -u | awk '{print $2}' > $TMPDIR/${pname}.tmp
 	f_listmembers ${SPEC_FILE} ${cname} | while read f_ret f_memb f_calls ; do
 		if [ -n "${f_ret}" ] ; then
@@ -370,7 +375,10 @@ c_spec_print_includes() {
 #			awk "/^${f_ret}\$/" $TMPDIR/${pname}.tmp 2>&1 > /dev/null
 			if [ "$?" = "0" ] ; then
 				lname=$(f_tolower ${f_ret})
-				echo "#include \"$(echo "${lname}" | sed -e 's/\*//g' ).h\""
+				if [ "${prev_lname}" != "${lname}" ] ; then
+					echo "#include \"$(echo "${lname}" | sed -e 's/\*//g' ).h\""
+				fi
+				prev_lname="${lname}"
 			fi
 		fi
 	done
@@ -416,6 +424,35 @@ EOF
 	fi
 }
 
+c_print_inner_class() {
+	cname=${1}
+	other=${2}
+	f_listmembers "${SPEC_FILE}" "${cname}" | awk "/\\$/" | sed -e 's/\$//g' | while read klass kmembers ; do
+		if [ -n "${klass}" ] ; then
+cat<<EOF
+
+	/* inner class */
+	class ${klass} 
+	{
+	public:
+		${klass}();
+		~${klass}();
+EOF
+	for fn in `echo "${kmembers}"` ; do
+cat<<EOF
+		int ${fn}(void* p)
+		{
+			return 0;
+		};
+EOF
+	done
+cat<<EOF
+	};
+EOF
+		fi
+	done
+}
+
 c_spec_header_class_body()
 {
 	cname=${1}
@@ -443,6 +480,7 @@ c_spec_header_class_body()
 cat<<EOF
 	${cname}();
 	${virt}~${cname}();
+	$(c_print_inner_class "${cname}" "${other}")
 EOF
 	ret="${DEF_RET}"
 	param=""
