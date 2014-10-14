@@ -111,7 +111,7 @@ ret String = "hello world";
 
 # these are the structs that we think we might need
 # and they will be copied to the common header
-struct MyStruct { int Val; }; 
+struct My${name}Struct { int Val; }; 
 
 # class <CLASSNAME> [<PROC>|<DEF>]
 # iclass <CLASSNAME> [<PROC>|<DEF>]
@@ -119,19 +119,19 @@ struct MyStruct { int Val; };
 # and/or followed by redefined memebers { ... }
 
 # this class uses a pointer var along with built-in and local def 
-class MyClassParent {OC} m_nValue [foxy]
+class My${name}ClassParent {OC} m_nValue [foxy]
 
 # this class begins with 'I' hence Interface class
 # virtual is applied until a var is listed
-class IMyClass {GS} m_isInterfaceClass
+class IMy${name}Class {GS} m_isInterfaceClass
 
 # assumes: member var (m_*), pointer (m_p*), bool (m_b*)
 # headers are auto included when a class is returned be procedure
-class MyClass m_iVar MyFunc OurFunc {SR}
+class My${name}Class m_iVar MyFunc OurFunc {SR}
 {
-	IMyClass* m_iVar
+	IMy${name}Class* m_iVar
 	String MyFunc OurFunc?open|close
-	MyStruct* OurFunc m_iVar->get
+	My${name}Struct* OurFunc m_iVar->get
 	\$MyInnerClass proc1 proc2
 }
 
@@ -147,8 +147,8 @@ vclass PureVirtualClass [rw] m_pInterface
 
 # here we re-order the class inheritance
 # order [<CLASSMAP>...]
-order MyClass:MyClassParent YourClass:MyClassParent
-order MyClassParent:IMyClass
+order My${name}Class:My${name}ClassParent YourClass:My${name}ClassParent
+order My${name}ClassParent:IMy${name}Class
 
 #eof v${GEN_VERSION}
 EOF
@@ -1353,6 +1353,14 @@ f_resetfile() {
 	echo -n > $1
 }
 
+f_find_specfile() {
+	sfile=${1}
+cat<<EOF
+./$(basename ${sfile} .spec).spec
+${GEN_SPEC_HOME}/${sfile}.spec
+EOF
+}
+
 TMPDIR=`mktemp -d /tmp/GEN_${USER}.XXXXXX`
 case "$1" in
 	-noop)
@@ -1381,6 +1389,11 @@ usage: gen FILE.spec or gen SPECNAME
 		this will create stub project in /other/path/
 	ex: gen MySpec.spec ./
 		to create a stub project in local dir
+
+	ex: gen -c NewSpecFile
+		to create a new spec file in your GEN_SPEC_HOME
+	ex: gen -l
+		to list spec files in you GEN_SPEC_HOME
 
 	note:
 	when remote dir is not given a copy of spec file will be 
@@ -1414,29 +1427,33 @@ EOF
 			$0 -r `pwd`
 		fi
 	;;
-	-e)
+	-c)
 		shift
-		SPEC_FILE=$1
-		file="${SPEC_FILE}"
-		if [ ! -r "$file" ] ; then
-			file="${SPEC_FILE}.spec"
-			if [ ! -r "$file" ] ; then
-				file="${GEN_SPEC_HOME}/${SPEC_FILE}"
-				if [ ! -r "$file" ] ; then
-					file="${GEN_SPEC_HOME}/${SPEC_FILE}.spec"
-					if [ ! -r "$file" ] ; then
-						echo "file not found"
-						exit 1
-					fi
+		if [ -n "$1" ] ; then
+			echo "creating spec file ${1}"
+			file="$1"
+			f_find_specfile "$(basename ${file} .spec)" | while read nfile ; do
+				if [ -r "${nfile}" ] ; then
+					echo "${nfile}" > $TMPDIR/spec.found
+					echo "spec file already exist at ${nfile}"
 				fi
+			done
+			if [ ! -r "$TMPDIR/spec.found" ] ; then
+				nfile="$(basename ${file} .spec).spec"
+				lcase="$(f_tolower $nfile)"
+				c_print_template "${lcase}" "${nfile}"  > "${GEN_SPEC_HOME}/${nfile}"
+				echo "spec file created ${GEN_SPEC_HOME}/${nfile}"
+			else
+				rm $TMPDIR/spec.found
 			fi
+		else
+			$0 -h
 		fi
-		SPEC_FILE="${file}"
-		vim ${SPEC_FILE}
 	;;
 	*)
 		if [ ! -n "$1" ] ; then
 			$0 -gen
+			rmdir $TMPDIR
 			exit 0
 		fi
 		SPEC_FILE=$1
@@ -1515,7 +1532,7 @@ EOF
 		c_remove_parent "${pname}" "include/${lpname}global.h"
 
 		echo "" >> $MF
-		mf_print "${lpname}" "${mfile} lib/lib${lpname}.so" "g++ -g -I./include -L./lib -Wall -D${upname}_VERSION=\\\"\$(${upname}_VERSION)\\\" ${mfile} -l${lpname} -o bin/${lpname} " >> $MF
+		mf_print "${lpname}" "${mfile} lib/lib${lpname}.so" "g++ -g -std=c++11 -I./include -L./lib -Wall -D${upname}_VERSION=\\\"\$(${upname}_VERSION)\\\" ${mfile} -l${lpname} -o bin/${lpname} " >> $MF
 		mf_print "clean" " " "rm -f obj/*.o obj/*.lo bin/${lpname} lib/lib${lpname}*.so*" >> $MF
 		mf_print "wipe" "${pname}.spec" "rm -fR ./bin/* ./lib/* ./obj/* ./src/* ./include/* ./out/* ./test/*" >> $MF
 
