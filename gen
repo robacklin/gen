@@ -127,7 +127,6 @@ struct My${name}Struct { int Val; };
 class My${name}ClassParent {OC} m_nValue [foxy]
 
 # this class begins with 'I' hence Interface class
-# virtual is applied until a var is listed
 class IMy${name}Class {GS} m_isInterfaceClass
 
 # assumes: member var (m_*), pointer (m_p*), bool (m_b*)
@@ -159,6 +158,112 @@ order My${name}ClassParent:IMy${name}Class
 
 #eof v${GEN_VERSION}
 EOF
+}
+
+removeleadingstr() {
+	sed -e "s/^${1}//g"
+}
+ltrim() {
+	sed -e 's/[ \t]*$//'
+}
+ignore() {
+	awk '!/^#/'
+}
+keyword_def() {
+	if [ -n "${1}" ] ; then
+		awk "/^def\s${1}/"
+	else
+		awk '/^def\s/'
+	fi
+}
+keyword_par() {
+	if [ -n "${1}" ] ; then
+		awk "/^par\s${1}=\s/"
+	else
+		awk '/^par\s/'
+	fi
+}
+keyword_ifile() {
+	if [ -n "${1}" ] ; then
+		awk "/^ifile\s${1}/"
+	else
+		awk '/^ifile\s/'
+	fi
+}
+keyword_file() {
+	if [ -n "${1}" ] ; then
+		awk "/^file\s${1}/"
+	else
+		awk '/^file\s/'
+	fi
+}
+keyword_driver() {
+	if [ -n "${1}" ] ; then
+		awk "/^driver\s${1}/"
+	else
+		awk '/^driver\s/'
+	fi
+}
+keyword_order() {
+	if [ -n "${1}" ] ; then
+		awk "/^order\s${1}/"
+	else
+		awk '/^order\s/'
+	fi
+}
+keyword_ret() {
+	if [ -n "${1}" ] ; then
+		awk "/^ret\s${1}/"
+	else
+		awk '/^ret\s/'
+	fi
+}
+keyword_include() {
+	if [ -n "${1}" ] ; then
+		awk '/^#include\s/' ${1}
+	else
+		awk '/^#include\s/'
+	fi
+}
+keyword_class() {
+	if [ -n "${1}" ] ; then
+		awk "/^class\s${1}/"
+	else
+		awk '/^class\s|^iclass|^vclass\s/'
+	fi
+}
+replace() {
+	sed -e "s,${1},${2},g"
+}
+replace2() {
+	sed -e "s/${1}/${2}/g"
+}
+class_members() {
+	 awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
+}
+tolower() {
+	if [ -n "${1}" ] ; then
+		echo "${1}" | tr '[:upper:]' '[:lower:]'
+	else
+		tr '[:upper:]' '[:lower:]'
+	fi
+}
+toupper() {
+	if [ -n "${1}" ] ; then
+		echo "${1}" | tr '[:lower:]' '[:upper:]'
+	else
+		tr '[:lower:]' '[:upper:]'
+	fi
+}
+clearfile() {
+	echo -n > $1
+}
+order_parentclass() {
+	if [ -n "${1}" ] ; then
+		echo "${1}" | awk -F':' '{print $2}'
+	else
+		awk -F':' '{print $2}'
+	fi
 }
 
 c_print_testfunc() {
@@ -222,7 +327,7 @@ EOF
 }
 
 c_print_comment() {
-	file=$(f_tolower ${1})
+	file=$(tolower ${1})
 cat<<EOF
 /* created on: $(date +%F) by ${USER} */ 
 /* file: ${file} */
@@ -233,7 +338,7 @@ EOF
 c_spec_main_body() {
 	lpname=${1}
 	cname="common"
-#	upname=$(f_toupper ${lpname})
+#	upname=$(toupper ${lpname})
 	c_print_comment "${cname}.cpp"
 
 cat<<EOF
@@ -244,8 +349,8 @@ cat<<EOF
 #include "${lpname}global.h"
 EOF
 	f_listclass ${SPEC_FILE} | while read class name other ; do
-		lname=$(f_tolower $name)
-		ltest=$(f_tolower "test/test_${lname}")
+		lname=$(tolower $name)
+		ltest=$(tolower "test/test_${lname}")
 		c_print_testfunc "${lname}" "${name}" "${other}" "${class}"
 		sh_print_testfunc ${name} ${lpname} > $ltest
 		chmod a+x $ltest
@@ -253,7 +358,7 @@ EOF
 	f_listtest_raw ${SPEC_FILE} | while read f_test; do
 		if [ -n "$f_test" ] ; then
 			for name in `echo $f_test`; do
-				lname=$(f_tolower ${name})
+				lname=$(tolower ${name})
 				c_print_testfunc ${lname}
 			done
 		fi
@@ -277,14 +382,14 @@ EOF
 
 	f_listclass ${SPEC_FILE} | while read class name other ; do
 		if [ "${class}" != "vclass" ] ; then
-			lname=$(echo $name | tr  '[:upper:]' '[:lower:]')
+			lname=$(tolower ${name})
 			echo "		{\"-test=${name}\", &test_${lname}, 1},"
 		fi
 	done
 	f_listtest_raw ${SPEC_FILE} | while read f_test; do
 		if [ -n "$f_test" ] ; then
 			for name in `echo $f_test`; do
-				lname=$(f_tolower ${name})
+				lname=$(tolower ${name})
 				echo "		{\"-test=${lname}\", &test_${lname}, 0},"
 			done
 		fi
@@ -314,7 +419,8 @@ c_spec_common_header() {
 	cname="common"
 	c_print_comment "${lpname}${cname}.h"
 	c_print_header_begin ${lpname} ${cname}
-	awk '/^#include\s/' ${SPEC_FILE} 
+	keyword_include ${SPEC_FILE}
+#	awk '/^#include\s/' ${SPEC_FILE} 
 cat<<EOF
 
 #include <iostream>
@@ -340,7 +446,7 @@ c_spec_body() {
 	file=${3}
 	other=${4}
 	keyw=${5}
-	lcname=$(f_tolower ${cname})
+	lcname=$(tolower ${cname})
 	c_print_comment "${lcname}.cpp"
 cat<<EOF
 
@@ -381,7 +487,7 @@ c_spec_print_includes() {
 			egrep "^${f_ret}\$" $TMPDIR/${pname}.tmp 2>&1 > /dev/null
 #			awk "/^${f_ret}\$/" $TMPDIR/${pname}.tmp 2>&1 > /dev/null
 			if [ "$?" = "0" ] ; then
-				lname=$(f_tolower ${f_ret})
+				lname=$(tolower ${f_ret})
 				if [ "${prev_lname}" != "${lname}" ] ; then
 					echo "#include \"$(echo "${lname}" | sed -e 's/\*//g' ).h\""
 				fi
@@ -398,7 +504,7 @@ c_spec_header() {
 	text=${3}
 	other=${4}
 	keyw=${5}
-	lpname=$(f_tolower ${pname})
+	lpname=$(tolower ${pname})
 	c_print_comment ${text}
 	c_print_header_begin ${pname} ${cname}
 	awk '/^#include\s/' ${SPEC_FILE} 
@@ -490,7 +596,7 @@ c_spec_header_class_body()
 	parent="$(f_listorder "${SPEC_FILE}" "${pname}" "${cname}")"
 	if [ -n "${parent}" ] ; then
 		if [ "${parent}" != "${cname}" ] ; then
-			lparent=$(f_tolower ${parent})
+			lparent=$(tolower ${parent})
 			echo "#include \"${lparent}.h\""
 		fi
 	fi
@@ -501,6 +607,7 @@ c_spec_header_class_body()
 	echo "${cname}" | egrep "^I" 2>&1 > /dev/null
 	if [ "$?" = 0 ] ; then
 		virt="virtual "
+		keyw="iclass"
 	fi
 	if [ "${keyw}" = "vclass" ] ; then
 		virt="virtual "
@@ -587,8 +694,8 @@ EOF
 }
 
 c_print_header_begin() {
-	upname=$(f_toupper ${1})
-	ucname=$(f_toupper ${2})
+	upname=$(toupper ${1})
+	ucname=$(toupper ${2})
 cat<<EOF
 #pragma once
 #ifndef ${upname}_${ucname}_H_
@@ -598,9 +705,7 @@ EOF
 }
 
 c_print_header_end() {
-	upname=$(f_toupper ${1})
-	ucname=$(f_toupper ${2})
-	echo "#endif /* ${upname}_${ucname}_H_ */"
+	echo "#endif /* $(toupper ${1})_$(toupper ${2})_H_ */"
 	echo ""
 }
 
@@ -785,8 +890,8 @@ process_test() {
 	f_listtest_raw ${file} | while read f_test; do
 		if [ -n "$f_test" ] ; then
 			for name in `echo $f_test`; do
-				sfile=$(f_tolower "test/test_${name}")
-				lname=$(f_tolower ${name})
+				sfile=$(tolower "test/test_${name}")
+				lname=$(tolower ${name})
 				echo "[test] creating ${sfile} for ${lname}"
 cat<<EOF > ${sfile}
 #!/bin/sh
@@ -805,6 +910,26 @@ EOF
 			done
 		fi
 	done
+}
+
+f_print_drv_h_includes() {
+cat<<EOF
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/sched.h>
+#include <linux/init.h>
+#include <linux/slab.h>
+#include <linux/device.h>
+#include <linux/miscdevice.h>
+EOF
+}
+
+f_print_drv_c_includes() {
+cat<<EOF
+#include <linux/module.h>
+#include <linux/interrupt.h>
+EOF
 }
 
 f_print_nspace_begin() {
@@ -836,14 +961,14 @@ process_nsfile() {
 	phfile=${4}
 	f_listnsfile_raw ${file} | while read nspace name f_proc; do
 		if [ -n "$name" ] ; then
-			lname=$(f_tolower ${name})
-			uname=$(f_toupper ${name})
-			hfile=$(f_tolower "include/${lname}_ns.h")
-			cfile=$(f_tolower "src/${lname}_ns.cpp")
+			lname=$(tolower ${name})
+			uname=$(toupper ${name})
+			hfile=$(tolower "include/${lname}_ns.h")
+			cfile=$(tolower "src/${lname}_ns.cpp")
 
 			echo "[ns] creating file ${hfile}" 
-			f_resetfile ${hfile}
-			f_resetfile ${cfile}
+			clearfile ${hfile}
+			clearfile ${cfile}
 			c_print_comment "${name}.h" >> ${hfile}
 			c_print_header_begin ${upname} ${name} >> ${hfile}
 
@@ -879,15 +1004,15 @@ process_ifile() {
 	specf=${file}
 	f_listifile_raw ${file} | while read name parm f_proc; do
 		if [ -n "$name" ] ; then
-			hfile=$(f_tolower "include/${name}.h")
-			cfile=$(f_tolower "src/${name}.cpp")
-			lname=$(f_tolower ${name})
+			hfile=$(tolower "include/${name}.h")
+			cfile=$(tolower "src/${name}.cpp")
+			lname=$(tolower ${name})
 			xname=${name}
 			echo "[ifile] creating file ${hfile}" 
 			echo "#include \"${lname}.h\"" >> ${phfile}
 
-			f_resetfile ${hfile}
-			f_resetfile ${cfile}
+			clearfile ${hfile}
+			clearfile ${cfile}
 			c_print_comment "${name}.h" >> ${hfile}
 			c_print_header_begin ${upname} ${name} >> ${hfile}
 
@@ -925,15 +1050,15 @@ process_file() {
 	phfile=${4}
 	f_listfile_raw ${file} | while read name f_proc; do
 		if [ -n "$name" ] ; then
-			hfile=$(f_tolower "include/${name}.h")
-			cfile=$(f_tolower "src/${name}.cpp")
-			lname=$(f_tolower ${name})
+			hfile=$(tolower "include/${name}.h")
+			cfile=$(tolower "src/${name}.cpp")
+			lname=$(tolower ${name})
 			xname=${name}
 			echo "[file] creating file ${hfile}" 
 			echo "#include \"${lname}.h\"" >> ${phfile}
 
-			f_resetfile ${hfile}
-			f_resetfile ${cfile}
+			clearfile ${hfile}
+			clearfile ${cfile}
 			c_print_comment "${name}.h" >> ${hfile}
 			c_print_header_begin ${upname} ${name} >> ${hfile}
 
@@ -966,33 +1091,25 @@ process_chdrv() {
 	f_listchdrv_raw ${file} | while read name f_proc; do
 		if [ -n "$name" ] ; then
 			mkdir -p ${chpath}
-			hfile=$(f_tolower "${chpath}/${name}.h")
-			cfile=$(f_tolower "${chpath}/${name}.c")
-			lname=$(f_tolower ${name})
-			uname=$(f_toupper ${name})
+			hfile=$(tolower "${chpath}/${name}.h")
+			cfile=$(tolower "${chpath}/${name}.c")
+			lname=$(tolower ${name})
+			uname=$(toupper ${name})
 
-			f_resetfile ${hfile}
-			f_resetfile ${cfile}
+			clearfile ${hfile}
+			clearfile ${cfile}
 			c_print_comment "${name}.h" >> ${hfile}
 			c_print_header_begin ${upname} ${name} >> ${hfile}
 
 cat<<EOF >> ${hfile}
-#include <linux/module.h>
-#include <linux/fs.h>
-#include <linux/uaccess.h>
-#include <linux/sched.h>
-#include <linux/init.h>
-#include <linux/slab.h>
-#include <linux/device.h>
-#include <linux/miscdevice.h>
+$(f_print_drv_h_includes)
 
 #define ${uname}_NAME "${lname}"
 
 EOF
 			c_print_comment "${name}.cpp" >> ${cfile}
 cat<<EOF >> ${cfile}
-#include <linux/module.h>
-#include <linux/interrupt.h>
+$(f_print_drv_c_includes)
 
 #include "$(basename ${hfile})"
 
@@ -1047,7 +1164,8 @@ static void get_irqs(void)
 EOF
 			param="(void *p)"
 			ret="static inline int"
-			for fn in `echo $f_proc`; do
+			echo "${f_proc}"
+			for fn in `echo "${f_proc}"`; do
 				echo "${ret} ${lname}_${fn}${param};" >> ${hfile}
 				echo "[driver] creating file $hfile for function ${fn}" 
 				c_print_cfunc "${ret}" "${lname}_${fn}" "${param}" >> ${cfile}
@@ -1175,7 +1293,8 @@ obj-m +=  ${lname}.o
 
 export KROOT=/lib/modules/$(uname -r)/build
 
-allofit:  userprogs modules
+#allofit:  userprogs modules
+allofit:  modules
 modules:
 	@\$(MAKE) -C \$(KROOT) M=\$(shell pwd) modules
 modules_install:
@@ -1252,10 +1371,11 @@ f_update_defonce() {
 	file=${1}
 	tfile=${2}
 	if [ ! -r "$TMPDIR/udef.tmp" ] ; then
-		cat ${file} | awk '!/^#/' | awk '/^def\s/' > $TMPDIR/udef.tmp
+#		cat ${file} | awk '!/^#/' | awk '/^def\s/' | sed -e 's/[ \t]*$//'  > $TMPDIR/udef.tmp
+		cat ${file} | ignore | keyword_def | ltrim  > $TMPDIR/udef.tmp
 	fi
 	cat $TMPDIR/udef.tmp | while read keyw txt f_memb ; do
-#		echo "k($keyw) t($txt) f($f_memb)"
+#		echo "k($keyw) t($txt) f($f_memb)" 
 		if [ -n "$f_memb" ] ; then
 			def="$(echo "${txt}" | awk -F'=' '{print $1}')"
 			fcalls="${f_memb}"
@@ -1263,7 +1383,8 @@ f_update_defonce() {
 			if [ -n "${sufix}" ] ; then
 				def=$(echo "${def}" | awk -F'.' '{print $1}')
 #				echo "1pre=(${prefix}) def=(${def})"
-				fcalls=$(f_sufix_line "${fcalls}" "${sufix}" | sed -e 's/\s$//g')
+				#fcalls=$(f_sufix_line "${fcalls}" "${sufix}" | sed -e 's/[ \t]*$//')
+				fcalls=$(f_sufix_line "${fcalls}" "${sufix}" | ltrim)
 #				echo "3suf=(${sufix}) def=(${def}) f($fcalls)"
 			fi
 			prefix=$(echo "${def}" | awk -F':' '{print $2}')
@@ -1290,12 +1411,13 @@ f_update_def() {
 f_listpar() {
 	file=${1}
 	filter=${2}
-	cat "${file}" | awk "/^par\s${filter}=\s/" | sed -e "s/^par\s${filter}=\s//g"
+#cat "${file}" | awk "/^par\s${filter}=\s/" | sed -e "s/^par\s${filter}=\s//g"
+	cat "${file}" | keyword_par "${filter}" | sed -e "s/^par\s${filter}=\s//g"
 }
 
 f_listifile_raw() {
 	file=${1}
-	cat ${file} | awk '/^ifile\s/' > $TMPDIR/ifile.tmp
+	cat ${file} | keyword_ifile > $TMPDIR/ifile.tmp
 	f_update_def "${file}" "ifile.tmp"
 	cat $TMPDIR/ifile.tmp | while read keyw name cmd flist ; do
 		echo "${name} ${cmd} ${flist}"
@@ -1305,7 +1427,7 @@ f_listifile_raw() {
 
 f_listfile_raw() {
 	file=${1}
-	cat ${file} | awk '/^file\s/' > $TMPDIR/file.tmp
+	cat ${file} | keyword_file > $TMPDIR/file.tmp
 	f_update_def "${file}" "file.tmp"
 	cat $TMPDIR/file.tmp | while read keyw name flist ; do
 		echo "${name} ${flist}"
@@ -1315,15 +1437,18 @@ f_listfile_raw() {
 
 f_listchdrv_raw() {
 	file=${1}
-	cat ${file} | awk '/^driver\s/' | while read keyw name flist ; do
-		echo "${name} ${flisst}"
+	cat ${file} | keyword_driver > $TMPDIR/drv.tmp
+	f_update_def "${file}" "drv.tmp"
+	cat $TMPDIR/drv.tmp | while read keyw name flist ; do
+		echo "${name} ${flist}"
 	done
+	rm $TMPDIR/drv.tmp
 }
 
 f_listorder_raw() {
 	file=${1}
-	keyw=${2}
-	cat ${file} | awk '/^order\s/' | grep "${keyw}" | while read other xclass ; do
+	filter=${2}
+	cat ${file} | keyword_order | grep "${filter}" | while read xorder xclass ; do
 		echo "${xclass}"
 	done
 }
@@ -1333,10 +1458,10 @@ f_listorder() {
 	pname=${2}
 	keyw=${3}
 	match=0
-	for grp in `f_listorder_raw ${file} ${keyw}` ; do
+	for grp in `cat ${file} | keyword_order | removeleadingstr "order"` ; do
 		echo "$grp" | grep "${keyw}:" 2>&1 > /dev/null
 		if [ "$?" = 0 ] ; then
-			echo "$grp" | awk -F':' '{print $2}'
+			order_parentclass "$grp"
 			return
 		fi
 	done
@@ -1348,7 +1473,7 @@ f_listorder() {
 f_listdefault() {
 	file=${1}
 	keyw=${2}
-	cat ${file} | awk '/^ret\s/' | grep "${keyw}" | awk -F'=' '{print $2}'
+	cat ${file} | keyword_ret "${keyw}" | awk -F'=' '{print $2}'
 }
 
 f_list_deldup() {
@@ -1374,7 +1499,7 @@ f_listclass() {
 	if [ -r "$TMPDIR/cl.tmp" ] ; then
 		cat $TMPDIR/cl.tmp
 	else
-		cat ${file} | awk '!/^#/' | awk '/^class\s|^iclass|^vclass\s/' > $TMPDIR/cl.tmp
+		cat ${file} | ignore | keyword_class > $TMPDIR/cl.tmp
 		if [ -n "${GEN_SPEC_CONF}" ] ; then
 			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
 				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cl.tmp
@@ -1401,7 +1526,8 @@ f_listclass() {
 }
 
 f_listmembers() {
-	cat ${1} | awk '!/^#/' | awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
+	cat ${1} | ignore | awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
+#	cat ${1} | ignore | class_members "${2}"
 }
 
 f_replace() {
@@ -1417,19 +1543,6 @@ f_sufix_line() {
 	echo "${1} " | sed -e "s/ /${2} /g"
 }
 
-f_tolower() {
-	echo $1 | tr '[:upper:]' '[:lower:]'
-}
-
-f_toupper() {
-#OR awk '{ print toupper($0) }'
-	echo $1 | tr '[:lower:]' '[:upper:]'
-}
-
-f_resetfile() {
-	echo -n > $1
-}
-
 f_find_specfile() {
 	sfile=${1}
 cat<<EOF
@@ -1442,12 +1555,9 @@ TMPDIR=`mktemp -d /tmp/GEN_${USER}.XXXXXX`
 case "$1" in
 	-noop)
 		shift
-		file=Hello.spec
-		cat ${file} | awk '/^file\s/' > $TMPDIR/ifile.tmp
-		cat $TMPDIR/ifile.tmp
-		f_update_def "${file}" "ifile.tmp"
-		cat $TMPDIR/ifile.tmp
-		rm $TMPDIR/ifile.tmp
+		file=/tmp/Hello.spec
+#		cat $file | keyword_order | removeleadingstr "order"
+		f_listorder "$file" "Hello" "MyHelloClass"
 	;;
 	-h|-help|--help)
 cat<<EOF
@@ -1514,8 +1624,9 @@ EOF
 			done
 			if [ ! -r "$TMPDIR/spec.found" ] ; then
 				nfile="$(basename ${file} .spec).spec"
-				lcase="$(f_tolower $nfile)"
-				c_print_template "${lcase}" "${nfile}"  > "${GEN_SPEC_HOME}/${nfile}"
+				tfile="$(basename ${file} .spec)"
+				lcase="$(tolower $nfile)"
+				c_print_template "${lcase}" "${tfile}"  > "${GEN_SPEC_HOME}/${nfile}"
 				echo "spec file created ${GEN_SPEC_HOME}/${nfile}"
 			else
 				rm $TMPDIR/spec.found
@@ -1548,8 +1659,8 @@ EOF
 		SPEC_FILE="${file}"
 		echo "spec: ${SPEC_FILE}"
 		pname=$(basename $SPEC_FILE .spec)
-		lpname=$(f_tolower $pname)
-		upname=$(f_toupper $pname)
+		lpname=$(tolower $pname)
+		upname=$(toupper $pname)
 		phfile=include/${lpname}.h
 		if [ -n "$2" ] ; then
 			cd $2
@@ -1570,7 +1681,7 @@ EOF
 		process_test ${SPEC_FILE} "${pname}" "${lpname}"
 
 		MF=Makefile
-		f_resetfile $MF
+		clearfile $MF
 		sh_print_comment $MF >> $MF
 		echo "${upname}_VERSION := \$(shell scripts/version)" >> $MF
 		mf_print "all" "" "" >> $MF
@@ -1578,7 +1689,7 @@ EOF
 		mf_print "lib/lib${lpname}.so" "lib" "" >> $MF
 		mf_print "doxygen" "lib/lib${lpname}.so" "doxygen -g conf/${pname}.doxygen" >> $MF
 	
-		f_resetfile ${phfile}
+		clearfile ${phfile}
 		c_print_comment "${lpname}.h" >> ${phfile}
 		c_print_header_begin ${upname} ${upname} >> ${phfile}
 		awk '/^#include\s/' ${SPEC_FILE} >> ${phfile}
@@ -1588,7 +1699,7 @@ EOF
 		process_ifile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		process_nsfile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		f_listclass $SPEC_FILE "${pname}Object ${pname}Global" | while read keyw cname other ; do
-			lname=$(f_tolower $cname)
+			lname=$(tolower $cname)
 			hfile=include/${lname}.h
 			cfile=src/${lname}.cpp
 			other="$(f_list_deldup "${other}")"
@@ -1609,7 +1720,7 @@ EOF
 		echo "" >> $MF
 		mf_print "${lpname}" "${mfile} lib/lib${lpname}.so" "g++ -g -std=c++11 -I./include -L./lib -Wall -D${upname}_VERSION=\\\"\$(${upname}_VERSION)\\\" ${mfile} -l${lpname} -o bin/${lpname} " >> $MF
 		mf_print "clean" " " "rm -f obj/*.o obj/*.lo bin/${lpname} lib/lib${lpname}*.so*" >> $MF
-		mf_print "wipe" "${pname}.spec" "rm -fR ./bin/* ./lib/* ./obj/* ./src/* ./include/* ./out/* ./test/*" >> $MF
+		mf_print "wipeout" "${pname}.spec" "rm -fR ./bin/* ./lib/* ./obj/* ./src/* ./include/* ./out/* ./test/*" >> $MF
 
 		process_repo ${SPEC_FILE} "${pname}"
 		f_gen_shutdown
