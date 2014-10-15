@@ -10,10 +10,11 @@ DEF_PROC_FUNC_PARAM="(void *p)"
 CLASS_GI=" getInstance m_pInstance "
 CLASS_ST=" enter exit transition getEvent setEvent getState setState getName setName m_pName m_nState m_iState m_iNext m_iPrev "
 CLASS_DB=" query m_iConnection m_iDatabase m_iTable m_iRow m_iColumn m_pCurrent m_pNext  "
-CLASS_SS=" start stop run join wait waitCond process worker m_nThread m_iThread m_pThread m_bRun "
-CLASS_OC=" open close isOpen m_pFile m_iFile m_pHandle m_bOpen "
-CLASS_NET=" connect disconnect listen accept bind select setTimeout getTimeout m_pSocket m_iSocket m_iServer m_iClient m_bServer m_bClient m_bInet m_bUnix "
+CLASS_TM=" setTimeout getTimeout onTimeout setTimer getTimer m_iTimer "
+CLASS_SS=" {TM} start stop run join condWait process worker m_nThread m_iThread m_pThread m_bRun "
+CLASS_NET=" {TM} connect disconnect listen accept bind select m_pSocket m_iSocket m_iServer m_iClient m_bServer m_bClient m_bInet m_bUnix "
 CLASS_SR=" send recv m_pMessage m_nMessage m_iMessage m_iSource m_iDestination m_iRoute "
+CLASS_OC=" open close isOpen m_pFile m_iFile m_pHandle m_bOpen "
 CLASS_RW=" read write m_pBuffer m_nBuffer m_iBuffer "
 CLASS_GS=" get set clear init isEmpty m_iValue m_iSize m_iStatus m_iVersion m_iGroup m_iLevel m_iError m_iType "
 CLASS_IO=" {GS}{OC}{RW} "
@@ -24,16 +25,13 @@ c_print_template() {
 cat<<EOF
 # created on $(date +%F) by $USER
 # these are built-in def, only use in classes
-# {GI} ${CLASS_GI}
-# {ST} ${CLASS_ST}
-# {DB} ${CLASS_DB}
-# {SS} ${CLASS_SS}
-# {OC} ${CLASS_OC}
-# {NET} ${CLASS_NET}
-# {SR} ${CLASS_SR}
-# {RW} ${CLASS_RW}
-# {GS} ${CLASS_GS}
-# {IO} ${CLASS_IO}
+EOF
+	if [ -n "${GEN_SPEC_CONF}" ] ; then
+		cat ${GEN_SPEC_CONF} 
+	else
+		cat $0 | awk '/^CLASS_/' | sed -e 's/=/} /g' -e 's/CLASS_/# {/g' -e 's/"//g'
+	fi
+cat<<EOF
 
 # this will create a git repo in the new project 
 # and it checkin on every re-run on gen
@@ -62,11 +60,18 @@ def rw= open close read write
 def foxy:state_= enter exit trans error event
 def csm:Pas= CreateStateMachine
 def pas:PasOn= Initialization Destroy Start Stop DebugDump
+# another example
+# def <VARNAME>:<PREFIX>.<SUFIX>= [<PROC> ...]
+def evt1:m_p.Event= Change PressDown PressUp Move Key Touch
+# below becomes onChangeEvent
+def evt2:on.Event= Change PressDown PressUp Move Key Touch
+# below becomes ChangeEvent
+def evt3:.Event= Change PressDown PressUp Move Key Touch
 
 # create both header and source for a context
 # and place a filename prefix on procedure (ex:${lname}_os_log)
 # file <FILENAME> [<PROC>|<DEF> ...]
-file ${lname}_os [foxy] onerror log [rw] 
+file ${lname}_os [foxy] onerror log [evt3]
 file ${lname}_helpers
 
 # re-define the stub parameters
@@ -84,7 +89,7 @@ ifile BlankFn
 # creates a file that is included in namespace
 # file becomes <FILENAME>_ns.* w/o prefix on procedure
 # ns <NAMESPACE PATH:...> <FILENAME> [<PROC>|<DEF> ...]
-ns NameSpace1:${name}:MQueue msg_q open close [foxy]
+ns NameSpace1:${name}:MQueue msg_q openQueue closeQueue [foxy]
 
 # test procedure and script are created by default for all class
 # but here we add some extra cases we what to check for in main_${lname}.cpp
@@ -127,12 +132,14 @@ class IMy${name}Class {GS} m_isInterfaceClass
 
 # assumes: member var (m_*), pointer (m_p*), bool (m_b*)
 # headers are auto included when a class is returned be procedure
+# used '\$' for inner class and '@' for enum
 class My${name}Class m_iVar MyFunc OurFunc {SR}
 {
 	IMy${name}Class* m_iVar
 	String MyFunc OurFunc?open|close
 	My${name}Struct* OurFunc m_iVar->get
-	\$MyInnerClass proc1 proc2
+	\$MyInnerClass myProc1 myProc2
+	@eColors RED ORANGE YELLOW
 }
 
 # all procedures are virtual in 'iclass'
@@ -424,15 +431,36 @@ EOF
 	fi
 }
 
-c_print_inner_class() {
+c_print_enum_class() {
 	cname=${1}
 	other=${2}
-	f_listmembers "${SPEC_FILE}" "${cname}" | awk "/\\$/" | sed -e 's/\$//g' | while read klass kmembers ; do
+	f_listmembers "${SPEC_FILE}" "${cname}" | awk "/\s@/" | sed -e 's/@//g' | while read klass kmembers ; do
 		if [ -n "${klass}" ] ; then
 cat<<EOF
 
-	/* inner class */
-	class ${klass} 
+	enum ${klass} /**< enum ${klass} */
+	{
+EOF
+	for fn in `echo "${kmembers}"` ; do
+cat<<EOF
+		${fn},
+EOF
+	done
+cat<<EOF
+	};
+EOF
+		fi
+	done
+}
+
+c_print_inner_class() {
+	cname=${1}
+	other=${2}
+	f_listmembers "${SPEC_FILE}" "${cname}" | awk "/\s\\$/" | sed -e 's/\$//g' | while read klass kmembers ; do
+		if [ -n "${klass}" ] ; then
+cat<<EOF
+
+	class ${klass}  /**< inner class ${klass} */
 	{
 	public:
 		${klass}();
@@ -481,6 +509,7 @@ cat<<EOF
 	${cname}();
 	${virt}~${cname}();
 	$(c_print_inner_class "${cname}" "${other}")
+	$(c_print_enum_class "${cname}" "${other}")
 EOF
 	ret="${DEF_RET}"
 	param=""
@@ -1219,18 +1248,43 @@ f_listnsfile_raw() {
 	rm $TMPDIR/ns.tmp
 }
 
+f_update_defonce() {
+	file=${1}
+	tfile=${2}
+	if [ ! -r "$TMPDIR/udef.tmp" ] ; then
+		cat ${file} | awk '!/^#/' | awk '/^def\s/' > $TMPDIR/udef.tmp
+	fi
+	cat $TMPDIR/udef.tmp | while read keyw txt f_memb ; do
+#		echo "k($keyw) t($txt) f($f_memb)"
+		if [ -n "$f_memb" ] ; then
+			def="$(echo "${txt}" | awk -F'=' '{print $1}')"
+			fcalls="${f_memb}"
+			sufix=$(echo "${def}" | awk -F'.' '{print $2}')
+			if [ -n "${sufix}" ] ; then
+				def=$(echo "${def}" | awk -F'.' '{print $1}')
+#				echo "1pre=(${prefix}) def=(${def})"
+				fcalls=$(f_sufix_line "${fcalls}" "${sufix}" | sed -e 's/\s$//g')
+#				echo "3suf=(${sufix}) def=(${def}) f($fcalls)"
+			fi
+			prefix=$(echo "${def}" | awk -F':' '{print $2}')
+			if [ -n "${prefix}" ] ; then
+				def=$(echo "${def}" | awk -F':' '{print $1}')
+#				echo "1pre=(${prefix}) def=(${def})"
+				fcalls=$(f_prefix_line "${fcalls}" "${prefix}")
+#				echo "2pre=(${prefix}) def=(${def}) f($fcalls)"
+			else
+				def=$(echo "${def}" | sed -e 's/://g' )
+			fi
+#			echo "replace=================  def($def) f($fcalls)"
+			f_replace "\[${def}\]" "${fcalls}"  $TMPDIR/${tfile}
+		fi
+	done
+}
+
 f_update_def() {
 	file=${1}
 	tfile=${2}
-	cat ${file} | awk '!/^#/' | awk '/^def\s/' | while read keyw txt f_memb ; do
-		def="$(echo "${txt}" | sed -e 's/=//g')"
-		prefix=$(echo "${def}" | awk -F':' '{print $2}')
-		def=$(echo "${def}" | awk -F':' '{print $1}')
-#		echo "1pre=(${prefix}) def=(${def}) "
-		fcalls=$(f_prefix_line "${f_memb}" "${prefix}")
-
-		f_replace "\[${def}\]" "${fcalls}"  $TMPDIR/${tfile}
-	done
+	f_update_defonce "${file}" "${tfile}" 
 }
 
 f_listpar() {
@@ -1301,26 +1355,49 @@ f_list_deldup() {
 	echo "${1}" | grep -o '\w*' | sort -u | tr '\n' ' '
 }
 
+f_gen_startup() {
+	echo -n ""
+}
+
+f_gen_shutdown() {
+	if [ -r "$TMPDIR/cl.tmp" ] ; then
+		rm $TMPDIR/cl.tmp
+	fi	
+	if [ -r "$TMPDIR/udef.tmp" ] ; then
+		rm $TMPDIR/udef.tmp
+	fi	
+}
+
 f_listclass() {
 	file=${1}
 	clist=${2}
-	cat ${file} | awk '!/^#/' | awk '/^class\s|^iclass|^vclass\s/' \
-		| sed -e "s/{IO}/${CLASS_IO}/" \
-		| sed -e "s/{GI}/${CLASS_GI}/" \
-		| sed -e "s/{ST}/${CLASS_ST}/" \
-		| sed -e "s/{DB}/${CLASS_DB}/" \
-		| sed -e "s/{SS}/${CLASS_SS}/" \
-		| sed -e "s/{OC}/${CLASS_OC}/" \
-		| sed -e "s/{NET}/${CLASS_NET}/" \
-		| sed -e "s/{SR}/${CLASS_SR}/" \
-		| sed -e "s/{RW}/${CLASS_RW}/" \
-		| sed -e "s/{GS}/${CLASS_GS}/" > $TMPDIR/cl.tmp
-	f_update_def "${file}" "cl.tmp"
-	cat $TMPDIR/cl.tmp
-	rm $TMPDIR/cl.tmp
-	for f in `echo ${clist}` ; do
-		echo "iclass ${f}"
-	done
+	if [ -r "$TMPDIR/cl.tmp" ] ; then
+		cat $TMPDIR/cl.tmp
+	else
+		cat ${file} | awk '!/^#/' | awk '/^class\s|^iclass|^vclass\s/' > $TMPDIR/cl.tmp
+		if [ -n "${GEN_SPEC_CONF}" ] ; then
+			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cl.tmp
+			done
+			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cl.tmp
+			done
+		else
+			cat $0 | awk '/^CLASS_/' | sed -e 's/=/} /g' -e 's/CLASS_/{/g' -e 's/"//g' > $TMPDIR/cx.tmp
+			cat $TMPDIR/cx.tmp | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cl.tmp
+			done
+			cat $TMPDIR/cx.tmp | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cl.tmp
+			done
+			rm $TMPDIR/cx.tmp
+		fi
+		f_update_def "${file}" "cl.tmp"
+		for f in `echo ${clist}` ; do
+			echo "iclass ${f}" >> $TMPDIR/cl.tmp
+		done
+		cat $TMPDIR/cl.tmp
+	fi
 }
 
 f_listmembers() {
@@ -1337,7 +1414,7 @@ f_prefix_line() {
 }
 
 f_sufix_line() {
-	echo "${1}" | sed -e "s/ /${2} /g"
+	echo "${1} " | sed -e "s/ /${2} /g"
 }
 
 f_tolower() {
@@ -1365,15 +1442,12 @@ TMPDIR=`mktemp -d /tmp/GEN_${USER}.XXXXXX`
 case "$1" in
 	-noop)
 		shift
-		echo -n > $TMPDIR/noop.tmp
-		cat $HOME/Public/ws/pasa/demo/me/tmp/Hello.spec | awk '/^file\s/' > $TMPDIR/noop.tmp
-		cat $TMPDIR/noop.tmp
-		echo "^before"
-		f_update_def "Hello.spec" "noop.tmp"
-		echo "^calc"
-		cat $TMPDIR/noop.tmp
-		echo "^after"
-		rm $TMPDIR/noop.tmp
+		file=Hello.spec
+		cat ${file} | awk '/^file\s/' > $TMPDIR/ifile.tmp
+		cat $TMPDIR/ifile.tmp
+		f_update_def "${file}" "ifile.tmp"
+		cat $TMPDIR/ifile.tmp
+		rm $TMPDIR/ifile.tmp
 	;;
 	-h|-help|--help)
 cat<<EOF
@@ -1409,7 +1483,7 @@ EOF
 		if [ -n "${GEN_SPEC_HOME}" ] ; then
 			echo "GEN_SPEC_HOME=${GEN_SPEC_HOME}"
 			ls ${GEN_SPEC_HOME} | while read file ; do
-				echo "${file} $(awk '/^#/' ${GEN_SPEC_HOME}/$file | sed 's/#//g' | head -1)"
+				echo "${file} $(awk '/^#/' ${GEN_SPEC_HOME}/$file | sed 's/#//g' | head -1)" 
 			done
 		else
 			echo "GEN_SPEC_HOME is not set"
@@ -1485,6 +1559,7 @@ EOF
 			cd ${lpname}
 		fi
 		mkdir -p bin lib conf scripts obj src include doc out test
+		f_gen_startup
 		sh_create_version
 		echo -n > include/version.h
 		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/version.h
@@ -1537,6 +1612,7 @@ EOF
 		mf_print "wipe" "${pname}.spec" "rm -fR ./bin/* ./lib/* ./obj/* ./src/* ./include/* ./out/* ./test/*" >> $MF
 
 		process_repo ${SPEC_FILE} "${pname}"
+		f_gen_shutdown
 	;;
 esac
 rmdir $TMPDIR
