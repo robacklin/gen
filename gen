@@ -233,10 +233,17 @@ keyword_class() {
 	fi
 }
 replace() {
-	sed -e "s,${1},${2},g"
+	if [ -n "${3}" ] ; then
+		echo "${3}" | sed -e "s,${1},${2},g"
+	else
+		sed -e "s,${1},${2},g"
+	fi
 }
-replace2() {
+replace_str() {
 	sed -e "s/${1}/${2}/g"
+}
+replace_in_file() {
+	sed -i "s,${1},${2},g" ${3}
 }
 class_members() {
 	 awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
@@ -441,12 +448,12 @@ EOF
 }
 
 c_spec_body() {
-	pfile=${1}
-	cname=${2}
-	file=${3}
-	other=${4}
-	keyw=${5}
-	lcname=$(tolower ${cname})
+	pfile="${1}"
+	cname="${2}"
+	file="${3}"
+	other="${4}"
+	keyw="${5}"
+	lcname=$(tolower "${cname}")
 	c_print_comment "${lcname}.cpp"
 cat<<EOF
 
@@ -511,7 +518,7 @@ c_spec_header() {
 	echo "#include \"${lpname}common.h\""
 	c_spec_print_includes  "${cname}" "${pname}"
 	c_spec_header_class_body "${cname}" "${pname}" "${other}" "${keyw}"
-	c_print_header_end ${pname} ${cname}
+	c_print_header_end "${pname}" "${cname}"
 }
 
 c_spec_header_class_begin() {
@@ -705,7 +712,7 @@ EOF
 }
 
 c_print_header_end() {
-	echo "#endif /* $(toupper ${1})_$(toupper ${2})_H_ */"
+	echo "#endif /* $(toupper "${1}")_$(toupper "${2}")_H_ */"
 	echo ""
 }
 
@@ -719,13 +726,27 @@ c_print_cfunc() {
 	ret=${1}
 	name=${2}
 	param=${3}
+	if [ -n "${5}" ] ; then
 cat<<EOF
 
+/* ${4} */
+$ret ${name}${param}
+{
+	${5}
+	${6}
+	return 0;
+}
+EOF
+	else
+cat<<EOF
+
+/* ${4} */
 $ret ${name}${param}
 {
 	return 0;
 }
 EOF
+	fi
 }
 
 c_print_ctor() {
@@ -976,17 +997,30 @@ cat<<EOF >> ${hfile}
 #include "${lpname}common.h"
 
 #define ${uname}_NSPATH "$(echo ${nspace} | sed -e 's,:,/,g')"
+#define ${uname}_DOTPATH "$(echo ${nspace} | sed -e 's,:,.,g')"
+
+typedef void* ${name}_t;
 EOF
-			f_print_nspace_begin "${nspace}" >> ${hfile}
+			c_print_comment "${name}.cpp" >> ${cfile}
 			echo "#include \"$(basename ${hfile})\"" >> ${phfile}
 			echo "#include \"$(basename ${hfile})\"" >> ${cfile}
-			c_print_comment "${name}.cpp" >> ${cfile}
+			f_print_nspace_begin "${nspace}" >> ${hfile}
 			f_print_nspace_begin "${nspace}" >> ${cfile}
-			param="${DEF_PROC_FUNC_PARAM}"
 			for fn in `echo $f_proc`; do
+cat<<EOF >> ${hfile}
+${name}_t ${fn}_data;
+EOF
+			done
+			echo "" >> ${hfile}
+#			param="${DEF_PROC_FUNC_PARAM}"
+			param="(${name}_t handle, int num, void *data)"
+			for fn in `echo $f_proc`; do
+				xmt="commit"
+				xmt_t="/* ${fn}_data = 0; */"
+				xmt_v="/* */"
 				echo "${DEF_RET_PROC} ${fn}${param};" >> ${hfile}
 #				echo "[ns] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${param}" >> ${cfile}
+				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
 			done
 			f_print_nspace_end "${nspace}" >> ${cfile}
 			f_print_nspace_end "${nspace}" >> ${hfile}
@@ -1019,21 +1053,52 @@ process_ifile() {
 cat<<EOF >> ${hfile}
 #include "${lpname}common.h"
 
+/* context typedef stub */
+typedef void* ${lname}_${lpname};
+
+/* context struct stub */
+typedef struct ${lname}_tag
+{
+	int ${lname}_id;
+	${lname}_${lpname} ${lname};
+	/* add stuff here */
+EOF
+			for fn in `echo $f_proc`; do
+cat<<EOF  >> ${hfile}
+	${lname}_${lpname} ${fn}_data; /* ${fn} data */
+EOF
+			done
+cat<<EOF  >> ${hfile}
+} ${lname}_t, *${lname}_ptr;
+
+EOF
+			c_print_comment "${name}.cpp" >> ${cfile}
+
+cat<<EOF >> ${cfile}
+#include "${lname}.h"
 EOF
 			xparm=""
-			c_print_comment "${name}.cpp" >> ${cfile}
-			echo "#include \"${lname}.h\"" >> ${cfile}
 			if [ -n "${parm}" ] ; then
+#				echo "1par(${parm})"
 				xparm=$(echo "${parm}" | sed -e 's/{//g' -e 's/}//g')
-				xparm=$(f_listpar "${specf}" "${xparm}"|head -1)
+#				echo "2par(${xparm})"
+				if [ -n "${xparm}" ] ; then
+					xparm=$(f_listpar "${specf}" "${xparm}"|head -1)
+#					echo "3par($(f_listpar "${specf}" "${xparm}"))"
+#					echo "4par(${xparm})"
+				fi
 			fi
 			if [ ! -n "${xparm}" ] ; then
-				xparm="${DEF_PROC_FUNC_PARAM}"
+				xparm="(${lname}_ptr handle, int num, void *data)"
+				hdl="handle->"
 			fi
 			for fn in `echo $f_proc`; do
+				xmt="@func of ${fn}"
+				xmt_t="/* ${hdl}${fn}_data = 0; */"
+				xmt_v="/**/"
 				echo "${DEF_RET_PROC} ${fn}${xparm};" >> ${hfile}
 #				echo "[ifile] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${xparm}" >> ${cfile}
+				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${xparm}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
 			done
 			echo "" >> ${cfile}
 			echo "" >> ${hfile}
@@ -1065,16 +1130,40 @@ process_file() {
 cat<<EOF >> ${hfile}
 #include "${lpname}common.h"
 
+/* context typedef stub */
+typedef void* ${lname}_${lpname};
+
+/* context struct stub */
+typedef struct ${lname}_tag
+{
+	int ${lname}_id;
+	${lname}_${lpname} ${lname};
+	/* add stuff here */
+EOF
+			for fn in `echo $f_proc`; do
+cat<<EOF  >> ${hfile}
+	${lname}_${lpname} ${fn}; /* ${fn} data */
+EOF
+			done
+cat<<EOF  >> ${hfile}
+} ${lname}_t, *${lname}_ptr;
+
 EOF
 			c_print_comment "${name}.cpp" >> ${cfile}
-			echo "#include \"${lname}.h\"" >> ${cfile}
-			param="${DEF_PROC_FUNC_PARAM}"
+
+cat<<EOF >> ${cfile}
+#include "${lname}.h"
+EOF
+			param="(${lname}_ptr handle, int num, void *data)"
 			for fn in `echo $f_proc`; do
+				xmt="@func of ${fn}, context of ${xname}; (in:handle, in:num, io:data)"
+				xmt_t="/* if ((handle == 0) || (date == 0)) return 0; */"
+				xmt_v="/* handle->${fn} = 0; */"
 				echo "${DEF_RET_PROC} ${xname}_${fn}${param};" >> ${hfile}
 #				echo "[file] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${DEF_RET_PROC}" "${xname}_${fn}" "${param}" >> ${cfile}
+				c_print_cfunc "${DEF_RET_PROC}" "${xname}_${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
 			done
-			echo "" >> ${cfile}
+			echo "/* eof ${cfile} */" >> ${cfile}
 
 			echo "" >> ${hfile}
 			c_print_header_end ${upname} ${name} >> ${hfile}
@@ -1166,9 +1255,12 @@ EOF
 			ret="static inline int"
 			echo "${f_proc}"
 			for fn in `echo "${f_proc}"`; do
+				xmt="commit"
+				xmt_t="/* ${fn}_data = 0;"
+				xmt_v="*/"
 				echo "${ret} ${lname}_${fn}${param};" >> ${hfile}
 				echo "[driver] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${ret}" "${lname}_${fn}" "${param}" >> ${cfile}
+				c_print_cfunc "${ret}" "${lname}_${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
 			done
 cat<<EOF >> ${cfile}
 
@@ -1337,8 +1429,8 @@ mf_print_gcc() {
 	mf=$MF
 	mf_print "obj/${lname}.o" "${cfile}" "g++ -g -std=c++11 -Wall -I./include -c ${cfile} -o obj/${lname}.o" >> $mf
 	mf_print "obj/${lname}.lo" "${cfile}" "g++ -g -c -std=c++11 -fPIC -Wall -I./include ${cfile} -o obj/${lname}.lo" >> $mf
-	f_replace "all: " "all: obj/${lname}.o " $mf
-	f_replace "lib: " "lib: obj/${lname}.lo " $mf
+	replace_in_file "all: " "all: obj/${lname}.o " $mf
+	replace_in_file "lib: " "lib: obj/${lname}.lo " $mf
 }
 
 f_listtest_raw() {
@@ -1397,7 +1489,7 @@ f_update_defonce() {
 				def=$(echo "${def}" | sed -e 's/://g' )
 			fi
 #			echo "replace=================  def($def) f($fcalls)"
-			f_replace "\[${def}\]" "${fcalls}"  $TMPDIR/${tfile}
+			replace_in_file "\[${def}\]" "${fcalls}"  $TMPDIR/${tfile}
 		fi
 	done
 }
@@ -1411,7 +1503,6 @@ f_update_def() {
 f_listpar() {
 	file=${1}
 	filter=${2}
-#cat "${file}" | awk "/^par\s${filter}=\s/" | sed -e "s/^par\s${filter}=\s//g"
 	cat "${file}" | keyword_par "${filter}" | sed -e "s/^par\s${filter}=\s//g"
 }
 
@@ -1528,11 +1619,6 @@ f_listclass() {
 f_listmembers() {
 	cat ${1} | ignore | awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
 #	cat ${1} | ignore | class_members "${2}"
-}
-
-f_replace() {
-#	echo "replace ${1} with ${2}"
-	sed -i "s,${1},${2},g" ${3}
 }
 
 f_prefix_line() {
@@ -1699,6 +1785,9 @@ EOF
 		process_ifile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		process_nsfile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		f_listclass $SPEC_FILE "${pname}Object ${pname}Global" | while read keyw cname other ; do
+			if [ "${cname}" = "${pname}" ] ; then
+				echo "WARNING: project name is the same as a class name (${cname}) this will cause issues"
+			fi
 			lname=$(tolower $cname)
 			hfile=include/${lname}.h
 			cfile=src/${lname}.cpp
