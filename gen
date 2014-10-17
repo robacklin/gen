@@ -37,6 +37,9 @@ cat<<EOF
 # and it checkin on every re-run on gen
 repo yes
 
+# these are builtin cfgs, you can have more than one options per line
+options pinout=io i2c=io uart=io spi=io i2c=ajax ipc=io
+
 # stubs to generate (cpp|c#|java|qt) currently only c/c++ supported
 lang cpp
   	
@@ -70,8 +73,8 @@ def evt3:.Event= Change PressDown PressUp Move Key Touch
 
 # create both header and source for a context
 # and place a filename prefix on procedure (ex:${lname}_os_log)
-# file <FILENAME> [<PROC>|<DEF> ...]
-file ${lname}_os [foxy] onerror log [evt3]
+# file <FILENAME> [<PROC>|<VAR>|<DEF> ...]
+file ${lname}_os [foxy] m_error log [evt3]
 file ${lname}_helpers
 
 # re-define the stub parameters
@@ -81,14 +84,14 @@ par pm= (void* data, int val)
 # create both header and soruce for a context
 # and allow the parameters to be set
 # unlike 'file' ifile does NOT place prefix on procedures 
-# ifile <FILENAME> <VARNAME> [<PROC>|<DEF> ...]
-ifile Dispatcher {pm} log [pas] error [csm]
+# ifile <FILENAME> <VARNAME> [<PROC>|<VAR>|<DEF> ...]
+ifile Dispatcher {pm} log [pas] m_error [csm]
 ifile DefParamFn {} [pas] [csm] log
 ifile BlankFn
 
 # creates a file that is included in namespace
 # file becomes <FILENAME>_ns.* w/o prefix on procedure
-# ns <NAMESPACE PATH:...> <FILENAME> [<PROC>|<DEF> ...]
+# ns <NAMESPACE PATH:...> <FILENAME> [<PROC>|<VAR>|<DEF> ...]
 ns NameSpace1:${name}:MQueue msg_q openQueue closeQueue [foxy]
 
 # test procedure and script are created by default for all class
@@ -168,6 +171,13 @@ ltrim() {
 }
 ignore() {
 	awk '!/^#/'
+}
+keyword_options() {
+	if [ -n "${1}" ] ; then
+		awk "/^options\s${1}/"
+	else
+		awk '/^options\s/'
+	fi
 }
 keyword_def() {
 	if [ -n "${1}" ] ; then
@@ -272,6 +282,41 @@ order_parentclass() {
 		awk -F':' '{print $2}'
 	fi
 }
+is_variable() {
+	echo "${1}" | grep "^m_" 2>&1 > /dev/null
+	echo "$?"
+}
+is_variable_ptr() {
+	echo "${1}" | grep "^m_p" 2>&1 > /dev/null
+	echo "$?"
+}
+is_variable_bool() {
+	echo "${1}" | grep "^m_b" 2>&1 > /dev/null
+	echo "$?"
+}
+is_variable_other() {
+	echo "${1}" | grep "^m_" 2>&1 > /dev/null
+	echo "$?"
+}
+
+c_print_testfunc_grp() {
+cat<<EOF
+
+int test_${1}(int argc, char **argv)
+{
+EOF
+	for fn in `echo ${2}`; do
+		lfn=$(tolower ${fn})
+cat<<EOF
+	/* TESTME( ${fn}${3}, RETURN ) */
+EOF
+	done
+cat<<EOF
+	LOG_TRACE("test ${1}");
+	return 0;
+}
+EOF
+}
 
 c_print_testfunc() {
 	if [ "${4}" = "vclass" ] ; then
@@ -354,6 +399,13 @@ cat<<EOF
 #include "version.h"
 #include "${lpname}.h"
 #include "${lpname}global.h"
+
+#define TESTME( FUN_F, RET_V ) \\
+	if (FUN_F == RET) { \\
+		LOG_TRACE("OK"); \\
+	} else { \\
+		LOG_TRACE("FAILED"); \\
+	}
 EOF
 	f_listclass ${SPEC_FILE} | while read class name other ; do
 		lname=$(tolower $name)
@@ -368,6 +420,22 @@ EOF
 				lname=$(tolower ${name})
 				c_print_testfunc ${lname}
 			done
+		fi
+	done
+	f_listfile_raw  ${SPEC_FILE} | while read name flist; do 
+		if [ -n "${flist}" ] ; then
+			c_print_testfunc_grp "${name}" "${flist}" "()"
+		fi
+	done
+	f_listifile_raw  ${SPEC_FILE} | while read name cmd flist; do 
+		if [ -n "${flist}" ] ; then
+			lcmd=$(echo "${cmd}" | sed -e 's/{//g' -e 's/}//g' )
+			c_print_testfunc_grp "${name}" "${flist}" "(${lcmd})"
+		fi
+	done
+	f_listnsfile_raw  ${SPEC_FILE} | while read nspace name flist; do 
+		if [ -n "${flist}" ] ; then
+			c_print_testfunc_grp "${name}" "${flist}" "()"
 		fi
 	done
 cat<<EOF
@@ -399,6 +467,24 @@ EOF
 				lname=$(tolower ${name})
 				echo "		{\"-test=${lname}\", &test_${lname}, 0},"
 			done
+		fi
+	done
+	f_listfile_raw ${SPEC_FILE} | while read name f_test; do
+		if [ -n "$f_test" ] ; then
+			lname=$(tolower ${name})
+			echo "		{\"-test=${lname}\", &test_${lname}, 0},"
+		fi
+	done
+	f_listifile_raw ${SPEC_FILE} | while read name lcmd f_test; do
+		if [ -n "$f_test" ] ; then
+			lname=$(tolower ${name})
+			echo "		{\"-test=${lname}\", &test_${lname}, 0},"
+		fi
+	done
+	f_listnsfile_raw ${SPEC_FILE} | while read nsspace name f_test; do
+		if [ -n "$f_test" ] ; then
+			lname=$(tolower ${name})
+			echo "		{\"-test=${lname}\", &test_${lname}, 0},"
 		fi
 	done
 
@@ -466,8 +552,7 @@ EOF
 	c_print_ctor ${cname} "ctor-${cname}"
 	c_print_dtor ${cname} "dtor-${cname}"
 	for f in `echo ${other}` ; do
-		echo "${f}" | grep "^m_" 2>&1 > /dev/null
-		if [ "$?" != 0 ] ; then
+		if [ "$(is_variable ${f})" != "0" ] ; then
 			rm -f /tmp/found_lock 2>&1 > /dev/null
 			f_listmembers ${SPEC_FILE} ${cname} | awk "/${f}/" | while read f_ret f_memb f_calls ; do
 				if [ "$f_memb" = "${f}" ] ; then
@@ -641,22 +726,19 @@ EOF
 			virt="virtual "
 			pvirt=" = 0"
 		fi
-		echo "${fname}" | grep "^m_" 2>&1 > /dev/null
-		if [ "$?" = 0 ] ; then
+		if [ "$(is_variable ${fname})" = "0" ] ; then
 			text="variable"
 			ret="int"
 			param=""
 			virt=""
 		fi
-		echo "${fname}" | grep "^m_p" 2>&1 > /dev/null
-		if [ "$?" = 0 ] ; then
+		if [ "$(is_variable_ptr ${fname})" = "0" ] ; then
 			text="pointer"
 			ret="void*"
 			param=""
 			virt=""
 		fi
-		echo "${fname}" | grep "^m_b" 2>&1 > /dev/null
-		if [ "$?" = 0 ] ; then
+		if [ "$(is_variable_bool ${fname})" = 0 ] ; then
 			text="variable"
 			ret="bool"
 			param=""
@@ -1015,12 +1097,16 @@ EOF
 #			param="${DEF_PROC_FUNC_PARAM}"
 			param="(${name}_t handle, int num, void *data)"
 			for fn in `echo $f_proc`; do
-				xmt="commit"
-				xmt_t="/* ${fn}_data = 0; */"
-				xmt_v="/* */"
-				echo "${DEF_RET_PROC} ${fn}${param};" >> ${hfile}
+				if [ "$(is_variable ${fn})" = "0" ] ; then
+					echo -n
+				else
+					xmt="commit"
+					xmt_t="/* ${fn}_data = 0; */"
+					xmt_v="/* */"
+					echo "${DEF_RET_PROC} ${fn}${param};" >> ${hfile}
 #				echo "[ns] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+					c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+				fi
 			done
 			f_print_nspace_end "${nspace}" >> ${cfile}
 			f_print_nspace_end "${nspace}" >> ${hfile}
@@ -1049,6 +1135,11 @@ process_ifile() {
 			clearfile ${cfile}
 			c_print_comment "${name}.h" >> ${hfile}
 			c_print_header_begin ${upname} ${name} >> ${hfile}
+			c_print_comment "${name}.cpp" >> ${cfile}
+
+cat<<EOF >> ${cfile}
+#include "${lname}.h"
+EOF
 
 cat<<EOF >> ${hfile}
 #include "${lpname}common.h"
@@ -1072,11 +1163,6 @@ cat<<EOF  >> ${hfile}
 } ${lname}_t, *${lname}_ptr;
 
 EOF
-			c_print_comment "${name}.cpp" >> ${cfile}
-
-cat<<EOF >> ${cfile}
-#include "${lname}.h"
-EOF
 			xparm=""
 			if [ -n "${parm}" ] ; then
 #				echo "1par(${parm})"
@@ -1093,12 +1179,16 @@ EOF
 				hdl="handle->"
 			fi
 			for fn in `echo $f_proc`; do
-				xmt="@func of ${fn}"
-				xmt_t="/* ${hdl}${fn}_data = 0; */"
-				xmt_v="/**/"
-				echo "${DEF_RET_PROC} ${fn}${xparm};" >> ${hfile}
+				if [ "$(is_variable ${fn})" = "0" ] ; then
+					echo -n
+				else
+					xmt="@func of ${fn}"
+					xmt_t="/* ${hdl}${fn}_data = 0; */"
+					xmt_v="/**/"
+					echo "${DEF_RET_PROC} ${fn}${xparm};" >> ${hfile}
 #				echo "[ifile] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${xparm}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+					c_print_cfunc "${DEF_RET_PROC}" "${fn}" "${xparm}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+				fi
 			done
 			echo "" >> ${cfile}
 			echo "" >> ${hfile}
@@ -1126,6 +1216,11 @@ process_file() {
 			clearfile ${cfile}
 			c_print_comment "${name}.h" >> ${hfile}
 			c_print_header_begin ${upname} ${name} >> ${hfile}
+			c_print_comment "${name}.cpp" >> ${cfile}
+
+cat<<EOF >> ${cfile}
+#include "${lname}.h"
+EOF
 
 cat<<EOF >> ${hfile}
 #include "${lpname}common.h"
@@ -1149,19 +1244,19 @@ cat<<EOF  >> ${hfile}
 } ${lname}_t, *${lname}_ptr;
 
 EOF
-			c_print_comment "${name}.cpp" >> ${cfile}
 
-cat<<EOF >> ${cfile}
-#include "${lname}.h"
-EOF
 			param="(${lname}_ptr handle, int num, void *data)"
 			for fn in `echo $f_proc`; do
-				xmt="@func of ${fn}, context of ${xname}; (in:handle, in:num, io:data)"
-				xmt_t="/* if ((handle == 0) || (date == 0)) return 0; */"
-				xmt_v="/* handle->${fn} = 0; */"
-				echo "${DEF_RET_PROC} ${xname}_${fn}${param};" >> ${hfile}
+				if [ "$(is_variable ${fn})" = "0" ] ; then
+					echo -n
+				else
+					xmt="@func of ${fn}, context of ${xname}; (in:handle, in:num, io:data)"
+					xmt_t="/* if ((handle == 0) || (date == 0)) return 0; */"
+					xmt_v="/* handle->${fn} = 0; */"
+					echo "${DEF_RET_PROC} ${xname}_${fn}${param};" >> ${hfile}
 #				echo "[file] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${DEF_RET_PROC}" "${xname}_${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+					c_print_cfunc "${DEF_RET_PROC}" "${xname}_${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+				fi
 			done
 			echo "/* eof ${cfile} */" >> ${cfile}
 
@@ -1582,6 +1677,9 @@ f_gen_shutdown() {
 	if [ -r "$TMPDIR/udef.tmp" ] ; then
 		rm $TMPDIR/udef.tmp
 	fi	
+	if [ -r "$TMPDIR/spec" ] ; then
+		rm $TMPDIR/spec
+	fi	
 }
 
 f_listclass() {
@@ -1635,6 +1733,45 @@ cat<<EOF
 ./$(basename ${sfile} .spec).spec
 ${GEN_SPEC_HOME}/${sfile}.spec
 EOF
+}
+
+process_options() {
+	sfile=${1}
+	pname=${2}
+	lpname=${3}
+	cat ${sfile} | keyword_options | while read opt flist ; do
+		for it in `echo "${flist}"` ; do
+			key=$(echo "${it}" | awk -F'=' '{print $1}')
+			val=$(echo "${it}" | awk -F'=' '{print $2}')
+#			echo "option: ${key} = ${val}"
+			case "${key}" in
+			pinout)
+cat<<EOF >> ${sfile}
+def ${val}_pinout= get set port channel enable disable
+file ${val}_pinout [${val}_pinout]
+EOF
+			;;
+			i2c)
+cat<<EOF >> ${sfile}
+def ${val}_i2c= open close read write setup_pinmux enable disable checksum
+file ${val}_i2c [${val}_i2c] master slave
+EOF
+			;;
+			uart)
+cat<<EOF >> ${sfile}
+def ${val}_uart= open close read write setup_pinmux configure enable disable checksum
+file ${val}_uart [${val}_uart]
+EOF
+			;;
+			ipc)
+cat<<EOF >> ${sfile}
+def ${val}_ipc= open close send recv msg_create msg_destroy enqueue dequeue m_queue m_message
+file ${val}_ipc [${val}_ipc]
+EOF
+			;;
+			esac
+		done
+	done
 }
 
 TMPDIR=`mktemp -d /tmp/GEN_${USER}.XXXXXX`
@@ -1742,9 +1879,10 @@ EOF
 				fi
 			fi
 		fi
-		SPEC_FILE="${file}"
-		echo "spec: ${SPEC_FILE}"
-		pname=$(basename $SPEC_FILE .spec)
+		cat ${file} > $TMPDIR/spec
+		SPEC_FILE="$TMPDIR/spec"
+		echo "spec: ${file}"
+		pname=$(basename ${file} .spec)
 		lpname=$(tolower $pname)
 		upname=$(toupper $pname)
 		phfile=include/${lpname}.h
@@ -1757,6 +1895,7 @@ EOF
 		fi
 		mkdir -p bin lib conf scripts obj src include doc out test
 		f_gen_startup
+		process_options ${SPEC_FILE} "${pname}" "${lpname}"
 		sh_create_version
 		echo -n > include/version.h
 		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/version.h
