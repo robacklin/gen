@@ -38,17 +38,21 @@ cat<<EOF
 repo yes
 
 # these are builtin cfgs, you can have more than one options per line
-options pinout=io i2c=io uart=io spi=io i2c=ajax ipc=io
+options pinout=io i2c=io i2c=packet uart=io spi=io ipc=io
 
 # stubs to generate (cpp|c#|java|qt) currently only c/c++ supported
 lang cpp
   	
 # in some cases dependency are needed.
 # these will download to the 'dl' folder
-# wget <URL> <DIRNAME>
-wget http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
-# git <URL> <DIRNAME> <BRANCH>
-git https://github.com/acklinr/ip_interface.git ip_interace master
+# dep <URL> <DIRNAME> [<BRANCH>]
+dep http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
+dep https://github.com/acklinr/ip_interface.git ip_interace master
+
+gen myfiles.gen 
+{
+	key= replace_with
+}
 
 # in some cases we need linux driver support
 # this will create a stub char driver with its own Makefile
@@ -74,8 +78,8 @@ def evt3:.Event= Change PressDown PressUp Move Key Touch
 # create both header and source for a context
 # and place a filename prefix on procedure (ex:${lname}_os_log)
 # file <FILENAME> [<PROC>|<VAR>|<DEF> ...]
-file ${lname}_os [foxy] m_error log [evt3]
-file ${lname}_helpers
+file unix_os [foxy] m_error log [evt3]
+file os_helpers
 
 # re-define the stub parameters
 # par <VARNAME>= <PARAM...> 
@@ -86,13 +90,13 @@ par pm= (void* data, int val)
 # unlike 'file' ifile does NOT place prefix on procedures 
 # ifile <FILENAME> <VARNAME> [<PROC>|<VAR>|<DEF> ...]
 ifile Dispatcher {pm} log [pas] m_error [csm]
-ifile DefParamFn {} [pas] [csm] log
-ifile BlankFn
+ifile BlankExample {} [pas] [csm] log
+ifile EmptyExample
 
 # creates a file that is included in namespace
 # file becomes <FILENAME>_ns.* w/o prefix on procedure
 # ns <NAMESPACE PATH:...> <FILENAME> [<PROC>|<VAR>|<DEF> ...]
-ns NameSpace1:${name}:MQueue msg_q openQueue closeQueue [foxy]
+ns NameSpace1:${name}:MQueue msg_q openQueue closeQueue [foxy] m_err
 
 # test procedure and script are created by default for all class
 # but here we add some extra cases we what to check for in main_${lname}.cpp
@@ -177,6 +181,20 @@ keyword_options() {
 		awk "/^options\s${1}/"
 	else
 		awk '/^options\s/'
+	fi
+}
+keyword_repo() {
+	if [ -n "${1}" ] ; then
+		awk "/^repo\s${1}/"
+	else
+		awk '/^repo\sy/'
+	fi
+}
+keyword_dep() {
+	if [ -n "${1}" ] ; then
+		awk "/^dep\s${1}/"
+	else
+		awk '/^dep\s/'
 	fi
 }
 keyword_def() {
@@ -298,6 +316,26 @@ is_variable_other() {
 	echo "${1}" | grep "^m_" 2>&1 > /dev/null
 	echo "$?"
 }
+list_compress() {
+cat<<EOF
+.tar.gz
+.zip
+.tar
+.tar.bz
+.tar.xz
+EOF
+}
+is_compress() {
+	bname=$(basename ${1})
+	for x in $(list_compress) ; do
+		echo "${bname}" | grep "$x" 2>&1 > /dev/null
+		if [ "$?" = "0" ] ; then
+			echo "0"
+			return
+		fi
+	done
+	echo "1"
+}
 
 c_print_testfunc_grp() {
 cat<<EOF
@@ -306,10 +344,12 @@ int test_${1}(int argc, char **argv)
 {
 EOF
 	for fn in `echo ${2}`; do
-		lfn=$(tolower ${fn})
+		if [ "$(is_variable ${fn})" != "0" ] ; then
+			lfn=$(tolower ${fn})
 cat<<EOF
 	/* TESTME( ${fn}${3}, RETURN ) */
 EOF
+		fi
 	done
 cat<<EOF
 	LOG_TRACE("test ${1}");
@@ -369,9 +409,22 @@ if [ "x\$?" != "x0" ] ; then
 fi
 
 export LD_LIBRARY_PATH=$(pwd)/lib:\$LD_LIBRARY_PATH
-
 echo "test ${cname} begin: \$0"
+EOF
+	if [ -r ".test_up" ] ; then
+		cat ${3}.test_up
+	else
+		echo "# ${3}/.test_up found found"
+	fi
+cat<<EOF
 valgrind --leak-check=yes --log-file=out/${cname}.out bin/${lpname} -test=${cname}
+EOF
+	if [ -r ".test_down" ] ; then
+		cat ${3}/.test_down
+	else
+		echo "# ${3}/.test_down found found"
+	fi
+cat<<EOF
 echo "test ${cname} end: \$0"
 
 #EOF
@@ -411,7 +464,7 @@ EOF
 		lname=$(tolower $name)
 		ltest=$(tolower "test/test_${lname}")
 		c_print_testfunc "${lname}" "${name}" "${other}" "${class}"
-		sh_print_testfunc ${name} ${lpname} > $ltest
+		sh_print_testfunc ${name} ${lpname} "test" > $ltest
 		chmod a+x $ltest
 	done
 	f_listtest_raw ${SPEC_FILE} | while read f_test; do
@@ -424,18 +477,21 @@ EOF
 	done
 	f_listfile_raw  ${SPEC_FILE} | while read name flist; do 
 		if [ -n "${flist}" ] ; then
-			c_print_testfunc_grp "${name}" "${flist}" "()"
+			lname=$(tolower ${name})
+			c_print_testfunc_grp "${lname}" "${flist}" "()"
 		fi
 	done
 	f_listifile_raw  ${SPEC_FILE} | while read name cmd flist; do 
 		if [ -n "${flist}" ] ; then
+			lname=$(tolower ${name})
 			lcmd=$(echo "${cmd}" | sed -e 's/{//g' -e 's/}//g' )
-			c_print_testfunc_grp "${name}" "${flist}" "(${lcmd})"
+			c_print_testfunc_grp "${lname}" "${flist}" "(${lcmd})"
 		fi
 	done
 	f_listnsfile_raw  ${SPEC_FILE} | while read nspace name flist; do 
 		if [ -n "${flist}" ] ; then
-			c_print_testfunc_grp "${name}" "${flist}" "()"
+			lname=$(tolower ${name})
+			c_print_testfunc_grp "${lname}" "${flist}" "()"
 		fi
 	done
 cat<<EOF
@@ -921,31 +977,22 @@ cat<<EOF
  */
 EOF
 }	
-
-process_wget() {
-	awk '/^wget\s/' ${1} | while read keyword url outfile misc; do
-		if [ -n "${outfile}" ] ; then
-			mkdir -p dl/${outfile}
-			OUT=dl/${outfile}/$(basename $url)
-			if [ ! -r "$OUT" ] ; then
-				wget $url -O $OUT || rm $OUT
-			else
-				echo "already downloaded $OUT"
-			fi
+run_wget() {
+	url=${1} 
+	outfile=${2} 
+	if [ -n "${outfile}" ] ; then
+		mkdir -p dl/${outfile}
+		OUT=dl/${outfile}/$(basename $url)
+		if [ ! -r "$OUT" ] ; then
+			wget $url -O $OUT || rm $OUT
 		else
-			echo "malformed wget command"
+			echo "already downloaded $OUT"
 		fi
-	done
+	else
+		echo "malformed wget command"
+	fi
 }
-
-process_repo() {
-	file=${1}
-	pname=${2}
-	awk '/^repo\sy/' ${file} | while read keyw repo; do
-		if [ -n "${keyw}" ] ; then
-			if [ ! -d ".git" ] ; then
-				git init
-				git add --ignore-removal bin/ obj/ out/ lib/
+gitignore() {
 cat<<EOF > .gitignore
 bin/*
 dl/*
@@ -953,6 +1000,16 @@ lib/*
 obj/*
 out/*
 EOF
+}
+process_repo() {
+	file=${1}
+	pname=${2}
+	cat ${file} | keyword_repo | while read keyw repo; do
+		if [ -n "${keyw}" ] ; then
+			if [ ! -d ".git" ] ; then
+				git init
+				git add --ignore-removal bin/ obj/ out/ lib/
+				gitignore
 				git add ./
 				git commit -a -m "initial commit" 2>&1 > /dev/null
 			else
@@ -964,26 +1021,36 @@ EOF
 		fi
 	done
 }
-
-process_git() {
-	awk '/^git\s/' ${1} | while read keyword url outdir branch misc; do
-		if [ -n "${outdir}" ] ; then
-			OUT=dl/${outdir}
-			if [ ! -d "$OUT" ] ; then
-				mkdir -p dl/${outdir}
-				if [ -n "${branch}" ] ; then
-					git clone -b ${branch} ${url} dl/${outdir}
-				else
-					git clone $url dl/${outdir}
-				fi
+run_git() {
+	url=${1}
+	outdir=${2}
+	branch=${3}
+	if [ -n "${outdir}" ] ; then
+		OUT=dl/${outdir}
+		if [ ! -d "$OUT" ] ; then
+			mkdir -p ${OUT}
+			if [ -n "${branch}" ] ; then
+				git clone -b ${branch} ${url} ${OUT}
 			else
-				echo "already downloaded $OUT"
+				git clone $url ${OUT}
 			fi
 		else
-			echo "malformed git command"
+			echo "already downloaded $OUT"
 		fi
+	else
+		echo "malformed git command"
+	fi
+}
+process_dep() {
+	cat $file | keyword_dep | while read keyw url odir branch misc ; do
+		if [ "$(is_compress ${url})" = "0" ] ; then
+#			echo "is compress ${url}"
+			run_wget "${url}" "${odir}"
+		else
+#			echo "is not compress ${url}"
+			run_git "${url}" "${odir}" "${branch}"
+		fi	
 	done
-
 }
 
 process_test() {
@@ -1284,6 +1351,7 @@ process_chdrv() {
 			clearfile ${cfile}
 			c_print_comment "${name}.h" >> ${hfile}
 			c_print_header_begin ${upname} ${name} >> ${hfile}
+			c_print_comment "${name}.cpp" >> ${cfile}
 
 cat<<EOF >> ${hfile}
 $(f_print_drv_h_includes)
@@ -1291,7 +1359,6 @@ $(f_print_drv_h_includes)
 #define ${uname}_NAME "${lname}"
 
 EOF
-			c_print_comment "${name}.cpp" >> ${cfile}
 cat<<EOF >> ${cfile}
 $(f_print_drv_c_includes)
 
@@ -1348,14 +1415,17 @@ static void get_irqs(void)
 EOF
 			param="(void *p)"
 			ret="static inline int"
-			echo "${f_proc}"
 			for fn in `echo "${f_proc}"`; do
-				xmt="commit"
-				xmt_t="/* ${fn}_data = 0;"
-				xmt_v="*/"
-				echo "${ret} ${lname}_${fn}${param};" >> ${hfile}
-				echo "[driver] creating file $hfile for function ${fn}" 
-				c_print_cfunc "${ret}" "${lname}_${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+				if [ "$(is_variable ${fn})" = "0" ] ; then
+					echo -n
+				else
+					xmt="commit"
+					xmt_t="/* ${fn}_data = 0;"
+					xmt_v="*/"
+					echo "${ret} ${lname}_${fn}${param};" >> ${hfile}
+					echo "[driver] creating file $hfile for function ${fn}" 
+					c_print_cfunc "${ret}" "${lname}_${fn}" "${param}" "${xmt}" "${xmt_t}" "${xmt_v}" >> ${cfile}
+				fi
 			done
 cat<<EOF >> ${cfile}
 
@@ -1858,12 +1928,19 @@ EOF
 			$0 -h
 		fi
 	;;
-	*)
-		if [ ! -n "$1" ] ; then
-			$0 -gen
-			rmdir $TMPDIR
-			exit 0
-		fi
+	-x)
+		shift
+		file="$($0 -p $1)"
+		cat $file | keyword_dep | while read keyw url odir branch misc ; do
+			if [ "$(is_compress ${url})" = "0" ] ; then
+		  		echo "is compress ${url}"
+			else
+		  		echo "is not compress ${url}"
+			fi	
+		done
+	;;
+	-p) ## path
+		shift
 		SPEC_FILE=$1
 		file="${SPEC_FILE}"
 		if [ ! -r "$file" ] ; then
@@ -1879,6 +1956,16 @@ EOF
 				fi
 			fi
 		fi
+		echo "${file}"
+	;;
+	*)
+		if [ ! -n "$1" ] ; then
+			$0 -gen
+			rmdir $TMPDIR
+			exit 0
+		fi
+		SPEC_FILE=$1
+		file="$($0 -p $1)"
 		cat ${file} > $TMPDIR/spec
 		SPEC_FILE="$TMPDIR/spec"
 		echo "spec: ${file}"
@@ -1890,7 +1977,7 @@ EOF
 			cd $2
 		else
 			mkdir -p ${lpname}
-			cp $SPEC_FILE ${lpname}/
+			cp ${file} ${lpname}/
 			cd ${lpname}
 		fi
 		mkdir -p bin lib conf scripts obj src include doc out test
@@ -1900,8 +1987,7 @@ EOF
 		echo -n > include/version.h
 		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/version.h
 
-		process_wget ${SPEC_FILE}
-		process_git ${SPEC_FILE}
+		process_dep ${SPEC_FILE}
 		process_chdrv ${SPEC_FILE} "${pname}" "${lpname}"
 		process_test ${SPEC_FILE} "${pname}" "${lpname}"
 
