@@ -1980,7 +1980,7 @@ EOF
 			cp ${file} ${lpname}/
 			cd ${lpname}
 		fi
-		mkdir -p bin lib conf scripts obj src include doc out test
+		mkdir -p bin lib conf scripts obj src include doc out test cmake
 		f_gen_startup
 		process_options ${SPEC_FILE} "${pname}" "${lpname}"
 		sh_create_version
