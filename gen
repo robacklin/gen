@@ -38,7 +38,7 @@ cat<<EOF
 repo yes
 
 # these are builtin cfgs, you can have more than one options per line
-options pinout=io i2c=io i2c=packet uart=io spi=io ipc=io
+#TODO: options pinout=io i2c=io i2c=packet uart=io spi=io ipc=io
 
 # stubs to generate (cpp|c#|java|qt) currently only c/c++ supported
 lang cpp
@@ -48,7 +48,9 @@ lang cpp
 # dep <URL> <DIRNAME> [<BRANCH>]
 dep http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
 dep https://github.com/acklinr/ip_interface.git ip_interace master
+#TODO: dep packagename.deb
 
+#TODO: to replace key with value in a given spec file
 gen myfiles.gen 
 {
 	key= replace_with
