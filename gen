@@ -19,6 +19,9 @@ CLASS_RW=" read write m_pBuffer m_nBuffer m_iBuffer "
 CLASS_GS=" get set clear init isEmpty m_iValue m_iSize m_iStatus m_iVersion m_iGroup m_iLevel m_iError m_iType "
 CLASS_IO=" {GS}{OC}{RW} "
 
+GEN_PREFIX=gen_
+GEN_F_VERSION=${GEN_PREFIX}version.h
+
 c_print_template() {
 	lname=${1}
 	name=${2}
@@ -82,6 +85,8 @@ def evt3:.Event= Change PressDown PressUp Move Key Touch
 # file <FILENAME> [<PROC>|<VAR>|<DEF> ...]
 file unix_os [foxy] m_error log [evt3]
 file os_helpers
+
+# NOTE: do NOT creata a file with same name as spec file
 
 # re-define the stub parameters
 # par <VARNAME>= <PARAM...> 
@@ -451,7 +456,7 @@ c_spec_main_body() {
 cat<<EOF
 
 #include <cstring>
-#include "version.h"
+#include "${GEN_F_VERSION}"
 #include "${lpname}.h"
 #include "${lpname}global.h"
 
@@ -1330,7 +1335,7 @@ EOF
 			echo "/* eof ${cfile} */" >> ${cfile}
 
 			echo "" >> ${hfile}
-			c_print_header_end ${upname} ${name} >> ${hfile}
+			c_print_header_end ${upname} ${xname} >> ${hfile}
 			mf_print_gcc "${lname}" "${cfile}" "$MF"
 		fi
 	done
@@ -1974,7 +1979,7 @@ EOF
 		pname=$(basename ${file} .spec)
 		lpname=$(tolower $pname)
 		upname=$(toupper $pname)
-		phfile=include/${lpname}.h
+		phfile=include/${GEN_PREFIX}${lpname}.h
 		if [ -n "$2" ] ; then
 			cd $2
 		else
@@ -1986,8 +1991,8 @@ EOF
 		f_gen_startup
 		process_options ${SPEC_FILE} "${pname}" "${lpname}"
 		sh_create_version
-		echo -n > include/version.h
-		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/version.h
+		echo -n > include/${GEN_F_VERSION}
+		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/${GEN_F_VERSION}
 
 		process_dep ${SPEC_FILE}
 		process_chdrv ${SPEC_FILE} "${pname}" "${lpname}"
