@@ -170,6 +170,12 @@ vclass PureVirtualClass [rw] m_pInterface
 order My${name}Class:My${name}ClassParent YourClass:My${name}ClassParent
 order My${name}ClassParent:IMy${name}Class
 
+#TODO: express a usage of a class doc/yourclass.ref
+expr YourClass() {
+	YourClass *p = YourClass();
+	p->HelloWorld();
+}
+
 #eof v${GEN_VERSION}
 EOF
 }
@@ -265,6 +271,13 @@ keyword_class() {
 		awk "/^class\s${1}/"
 	else
 		awk '/^class\s|^iclass|^vclass\s/'
+	fi
+}
+keyword_expr() {
+	if [ -n "${1}" ] ; then
+		awk "/^expr\s${1}/"
+	else
+		awk '/^expr\s/'
 	fi
 }
 replace() {
@@ -1759,6 +1772,35 @@ f_gen_shutdown() {
 	fi	
 }
 
+f_listexpr() {
+	file=${1}
+	clist=${2}
+	if [ -r "$TMPDIR/clex.tmp" ] ; then
+		cat $TMPDIR/clex.tmp
+	else
+		cat ${file} | ignore | keyword_expr > $TMPDIR/clex.tmp
+		if [ -n "${GEN_SPEC_CONF}" ] ; then
+			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/clex.tmp
+			done
+			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cl.tmp
+			done
+		else
+			cat $0 | awk '/^CLASS_/' | sed -e 's/=/} /g' -e 's/CLASS_/{/g' -e 's/"//g' > $TMPDIR/cxex.tmp
+			cat $TMPDIR/cxex.tmp | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/clex.tmp
+			done
+			cat $TMPDIR/cxex.tmp | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/clex.tmp
+			done
+			rm $TMPDIR/cxex.tmp
+		fi
+		f_update_def "${file}" "clex.tmp"
+		cat $TMPDIR/clex.tmp
+	fi
+}
+
 f_listclass() {
 	file=${1}
 	clist=${2}
@@ -1791,8 +1833,13 @@ f_listclass() {
 	fi
 }
 
+f_listexpression() {
+	cat ${1} | ignore | awk "/^expr\s${2}()/ {flag=1;next} /^\}/{flag=0} flag {print}"
+}
+
 f_listmembers() {
-	cat ${1} | ignore | awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
+#	cat ${1} | ignore | awk "/^class\s${2}\s/ {flag=1;next} /^class\s/{flag=0} flag {print}" 
+	cat ${1} | ignore | awk "/^class\s${2}\s/ {flag=1;next} /^\}/{flag=0} flag {print}" 
 #	cat ${1} | ignore | class_members "${2}"
 }
 
@@ -1855,9 +1902,9 @@ TMPDIR=`mktemp -d /tmp/GEN_${USER}.XXXXXX`
 case "$1" in
 	-noop)
 		shift
-		file=/tmp/Hello.spec
+		file=/tmp/gen_wifi/Wifi.spec
 #		cat $file | keyword_order | removeleadingstr "order"
-		f_listorder "$file" "Hello" "MyHelloClass"
+#		f_listorder "$file" "Hello" "MyHelloClass"
 	;;
 	-h|-help|--help)
 cat<<EOF
@@ -2029,6 +2076,16 @@ EOF
 			c_spec_body "${pname}" "${cname}" "${cname}.cpp" "${other}" "${keyw}" > ${cfile}
 			mf_print_gcc "${lname}" "${cfile}" "$MF"
 			echo "#include \"${lname}.h\"" >> ${phfile}
+		done
+		f_listexpr $SPEC_FILE | while read keyw cname other ; do
+			if [ "${cname}" = "${pname}" ] ; then
+				echo "WARNING: project name is the same as a class name (${cname}) this will cause issues"
+			fi
+			lname=$(tolower $cname)
+			dfile=doc/${lname}.ref
+			other="$(f_list_deldup "${other}")"
+			echo "creating file $dfile for expression $cname" 
+			f_listexpression ${SPEC_FILE} ${cname} > ${dfile}
 		done
 		mfile="src/main_${lpname}.cpp"
 		echo "" >> ${phfile}
