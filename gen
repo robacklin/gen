@@ -54,8 +54,7 @@ dep https://github.com/acklinr/ip_interface.git ip_interace master
 #TODO: dep packagename.deb
 
 #TODO: to replace key with value in a given spec file
-gen myfiles.gen 
-{
+import myfiles.gen {
 	key= replace_with
 }
 
@@ -278,6 +277,13 @@ keyword_expr() {
 		awk "/^expr\s${1}/"
 	else
 		awk '/^expr\s/'
+	fi
+}
+keyword_import() {
+	if [ -n "${1}" ] ; then
+		awk "/^import\s${1}/"
+	else
+		awk '/^import\s/'
 	fi
 }
 replace() {
@@ -1285,6 +1291,17 @@ EOF
 	done
 }
 
+process_import() {
+	file=${1}
+	pname=${2}
+	lpname=${3}
+	phfile=${4}
+	f_listimport ${file} | while read name f_proc; do
+		echo "[import] ${name}"
+		echo "WARNING: import not implemented"
+	done
+}
+
 process_file() {
 	file=${1}
 	pname=${2}
@@ -1701,6 +1718,16 @@ f_listifile_raw() {
 	rm $TMPDIR/ifile.tmp
 }
 
+f_listimport() {
+	file=${1}
+	cat ${file} | keyword_import > $TMPDIR/import.tmp
+	f_update_def "${file}" "import.tmp"
+	cat $TMPDIR/import.tmp | while read keyw name flist ; do
+		echo "${name} ${flist}"
+	done
+	rm $TMPDIR/import.tmp
+}
+
 f_listfile_raw() {
 	file=${1}
 	cat ${file} | keyword_file > $TMPDIR/file.tmp
@@ -2062,6 +2089,7 @@ EOF
 		awk '/^#include\s/' ${SPEC_FILE} >> ${phfile}
 		echo "" >> ${phfile}
 		echo "#include \"${lpname}common.h\"" >> ${phfile}
+		process_import ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		process_file ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		process_ifile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
 		process_nsfile ${SPEC_FILE} "${pname}" "${lpname}" "${phfile}"
