@@ -170,10 +170,10 @@ vclass PureVirtualClass [rw] m_pInterface
 order My${name}Class:My${name}ClassParent YourClass:My${name}ClassParent
 order My${name}ClassParent:IMy${name}Class
 
-#TODO: express a usage of a class doc/yourclass.ref
-expr YourClass() {
+# express a usage of a class doc/yourclass.ref
+expr YourClass {
 	YourClass *p = YourClass();
-	p->HelloWorld();
+	p->HelloWorld(new  My${name}Class);
 }
 
 #eof v${GEN_VERSION}
@@ -1834,7 +1834,9 @@ f_listclass() {
 }
 
 f_listexpression() {
+	echo "void ${2}() {"
 	cat ${1} | ignore | awk "/^expr\s${2}()/ {flag=1;next} /^\}/{flag=0} flag {print}"
+	echo "}"
 }
 
 f_listmembers() {
@@ -2079,11 +2081,11 @@ EOF
 		done
 		f_listexpr $SPEC_FILE | while read keyw cname other ; do
 			if [ "${cname}" = "${pname}" ] ; then
-				echo "WARNING: project name is the same as a class name (${cname}) this will cause issues"
+				echo "WARNING: project name is the same as a expression name (${cname}) this will cause issues"
 			fi
 			lname=$(tolower $cname)
 			dfile=doc/${lname}.ref
-			other="$(f_list_deldup "${other}")"
+#			other="$(f_list_deldup "${other}")"
 			echo "creating file $dfile for expression $cname" 
 			f_listexpression ${SPEC_FILE} ${cname} > ${dfile}
 		done
