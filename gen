@@ -53,10 +53,13 @@ dep http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
 dep https://github.com/acklinr/ip_interface.git ip_interace master
 #TODO: dep packagename.deb
 
-#TODO: to replace key with value in a given spec file
-import myfiles.gen {
+# import another spec file into project with new filename
+# and then to replace key with value in a given spec file
+import AnotherSpecFile NewFilename {
 	key= replace_with
 }
+# import spec as is
+import MySpecAsIs
 
 # in some cases we need linux driver support
 # this will create a stub char driver with its own Makefile
@@ -137,16 +140,17 @@ struct My${name}Struct { int Val; };
 # and/or followed by redefined memebers { ... }
 
 # this class uses a pointer var along with built-in and local def 
-class My${name}ClassParent {OC} m_nValue [foxy]
+class My${name}ClassParent {OC} m_nValue [foxy] {
+}
 
 # this class begins with 'I' hence Interface class
-class IMy${name}Class {GS} m_isInterfaceClass
+class IMy${name}Class {GS} m_isInterfaceClass {
+}
 
 # assumes: member var (m_*), pointer (m_p*), bool (m_b*)
 # headers are auto included when a class is returned be procedure
 # used '\$' for inner class and '@' for enum
-class My${name}Class m_iVar MyFunc OurFunc {SR}
-{
+class My${name}Class m_iVar MyFunc OurFunc {SR} {
 	IMy${name}Class* m_iVar
 	String MyFunc OurFunc?open|close
 	My${name}Struct* OurFunc m_iVar->get
@@ -155,14 +159,17 @@ class My${name}Class m_iVar MyFunc OurFunc {SR}
 }
 
 # all procedures are virtual in 'iclass'
-iclass YourClassIf {IO} m_isInterfaceClass
+iclass YourClassIf {IO} m_isInterfaceClass {
+}
 
 # example of built-in def
-class YourClass {RW} {GI}
+class YourClass {RW} {GI} {
+}
 
 # all procedures are 'pure' virtual in 'vclass'
 # and all member var are dropped
-vclass PureVirtualClass [rw] m_pInterface
+vclass PureVirtualClass [rw] m_pInterface {
+}
 
 # here we re-order the class inheritance
 # order [<CLASSMAP>...]
@@ -1296,9 +1303,19 @@ process_import() {
 	pname=${2}
 	lpname=${3}
 	phfile=${4}
-	f_listimport ${file} | while read name f_proc; do
-		echo "[import] ${name}"
-		echo "WARNING: import not implemented"
+	f_listimport ${file} | while read name as_name f_proc; do
+		if [ ! -r "dl/${name}/${name}.spec" ] ; then
+			if [ -r "${GEN_SPEC_HOME}/${name}.spec" ] ; then
+				echo "[import] ${name}.spec"
+				mkdir -p dl/${name}
+				cp -f ${GEN_SPEC_HOME}/${name}.spec dl/${name}/
+				echo "TODO: cd dl/${name}/ && gen ${name}"
+			else
+				echo "[import] FAILED: ${name}.spec"
+			fi
+		else
+			echo "[import] ${name}.spec already imported"
+		fi
 	done
 }
 
@@ -1791,6 +1808,9 @@ f_gen_shutdown() {
 	if [ -r "$TMPDIR/cl.tmp" ] ; then
 		rm $TMPDIR/cl.tmp
 	fi	
+	if [ -r "$TMPDIR/clex.tmp" ] ; then
+		rm $TMPDIR/clex.tmp
+	fi	
 	if [ -r "$TMPDIR/udef.tmp" ] ; then
 		rm $TMPDIR/udef.tmp
 	fi	
@@ -1811,7 +1831,7 @@ f_listexpr() {
 				sed -i "s/${xkey}/${expand}/g" $TMPDIR/clex.tmp
 			done
 			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
-				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cl.tmp
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/clex.tmp
 			done
 		else
 			cat $0 | awk '/^CLASS_/' | sed -e 's/=/} /g' -e 's/CLASS_/{/g' -e 's/"//g' > $TMPDIR/cxex.tmp
@@ -2107,15 +2127,19 @@ EOF
 			mf_print_gcc "${lname}" "${cfile}" "$MF"
 			echo "#include \"${lname}.h\"" >> ${phfile}
 		done
-		f_listexpr $SPEC_FILE | while read keyw cname other ; do
+		f_listexpr $SPEC_FILE | while read keyw cname bname other ; do
 			if [ "${cname}" = "${pname}" ] ; then
 				echo "WARNING: project name is the same as a expression name (${cname}) this will cause issues"
 			fi
 			lname=$(tolower $cname)
 			dfile=doc/${lname}.ref
+			echo -n > ${dfile}
 #			other="$(f_list_deldup "${other}")"
+			if [ "${bname}" != "{" ] ; then
+				echo "using ${bname}" >> ${dfile}
+			fi
 			echo "creating file $dfile for expression $cname" 
-			f_listexpression ${SPEC_FILE} ${cname} > ${dfile}
+			f_listexpression ${SPEC_FILE} ${cname} >> ${dfile}
 		done
 		mfile="src/main_${lpname}.cpp"
 		echo "" >> ${phfile}
