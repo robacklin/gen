@@ -12,7 +12,7 @@ CLASS_ST=" enter exit transition getEvent setEvent getState setState getName set
 CLASS_DB=" query m_iConnection m_iDatabase m_iTable m_iRow m_iColumn m_pCurrent m_pNext  "
 CLASS_TM=" setTimeout getTimeout onTimeout setTimer getTimer m_iTimer "
 CLASS_SS=" {TM} start stop run join condWait process worker m_nThread m_iThread m_pThread m_bRun "
-CLASS_NET=" {TM} connect disconnect listen accept bind select m_pSocket m_iSocket m_iServer m_iClient m_bServer m_bClient m_bInet m_bUnix "
+CLASS_NET="{TM} connect disconnect listen accept bind select m_pSocket m_iSocket m_iServer m_iClient m_bServer m_bClient m_bInet m_bUnix "
 CLASS_SR=" send recv m_pMessage m_nMessage m_iMessage m_iSource m_iDestination m_iRoute "
 CLASS_OC=" open close isOpen m_pFile m_iFile m_pHandle m_bOpen "
 CLASS_RW=" read write m_pBuffer m_nBuffer m_iBuffer "
@@ -51,7 +51,9 @@ lang cpp
 # dep <URL> <DIRNAME> [<BRANCH>]
 dep http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
 dep https://github.com/acklinr/ip_interface.git ip_interace master
-#TODO: dep packagename.deb
+
+#TODO: pkg <PACKAGENAME> to install
+pkg libncursesw5-dev
 
 # import another spec file into project with new filename
 # and then to replace key with value in a given spec file
@@ -177,7 +179,8 @@ order My${name}Class:My${name}ClassParent YourClass:My${name}ClassParent
 order My${name}ClassParent:IMy${name}Class
 
 # express a usage of a class doc/yourclass.ref
-expr YourClass {
+# expr NAME <USING>
+expr YourClass My${name}Class {
 	YourClass *p = YourClass();
 	p->HelloWorld(new  My${name}Class);
 }
@@ -214,6 +217,13 @@ keyword_dep() {
 		awk "/^dep\s${1}/"
 	else
 		awk '/^dep\s/'
+	fi
+}
+keyword_pkg() {
+	if [ -n "${1}" ] ; then
+		awk "/^pkg\s${1}/"
+	else
+		awk '/^pkg\s/'
 	fi
 }
 keyword_def() {
@@ -483,7 +493,7 @@ cat<<EOF
 
 #include <cstring>
 #include "${GEN_F_VERSION}"
-#include "${lpname}.h"
+#include "${GEN_PREFIX}${lpname}.h"
 #include "${lpname}global.h"
 
 #define TESTME( FUN_F, RET_V ) \\
@@ -924,7 +934,7 @@ c_print_ctor() {
 cat<<EOF
 ${1}::${1}()
 {
-		LOG_TRACE(" ${2} ")
+		LOG_TRACE(" ${2} ");
 }
 
 EOF
@@ -934,7 +944,7 @@ c_print_dtor() {
 cat<<EOF
 ${1}::~${1}()
 {
-		LOG_TRACE(" ${2} ")
+		LOG_TRACE(" ${2} ");
 }
 
 EOF
@@ -1085,7 +1095,12 @@ process_dep() {
 		fi	
 	done
 }
-
+process_pkg() {
+#	getOSInstallType
+	cat $file | keyword_pkg | while read keyw url odir branch misc ; do
+		echo "[package] ${url}"
+	done
+}
 process_test() {
 	file=${1}
 	pname=${2}
@@ -1304,14 +1319,15 @@ process_import() {
 	lpname=${3}
 	phfile=${4}
 	f_listimport ${file} | while read name as_name f_proc; do
-		if [ ! -r "dl/${name}/${name}.spec" ] ; then
+		if [ ! -r "import/${name}/${name}.spec" ] ; then
+			mkdir -p import/${name}
 			if [ -r "${GEN_SPEC_HOME}/${name}.spec" ] ; then
 				echo "[import] ${name}.spec"
-				mkdir -p dl/${name}
-				cp -f ${GEN_SPEC_HOME}/${name}.spec dl/${name}/
+				cp -f ${GEN_SPEC_HOME}/${name}.spec import/${name}/
 				echo "TODO: cd dl/${name}/ && gen ${name}"
 			else
 				echo "[import] FAILED: ${name}.spec"
+				cd import/${name} ; gen ; mv Hello.spec ${name}.spec ; cd -
 			fi
 		else
 			echo "[import] ${name}.spec already imported"
@@ -2083,7 +2099,7 @@ EOF
 			cp ${file} ${lpname}/
 			cd ${lpname}
 		fi
-		mkdir -p bin lib conf scripts obj src include doc out test cmake
+		mkdir -p bin lib conf scripts obj src include doc out test cmake import
 		f_gen_startup
 		process_options ${SPEC_FILE} "${pname}" "${lpname}"
 		sh_create_version
@@ -2091,6 +2107,7 @@ EOF
 		echo "#define ${upname}_REVISION \"0.$(date +%U).$(date +%w)\"" >> include/${GEN_F_VERSION}
 
 		process_dep ${SPEC_FILE}
+		process_pkg ${SPEC_FILE}
 		process_chdrv ${SPEC_FILE} "${pname}" "${lpname}"
 		process_test ${SPEC_FILE} "${pname}" "${lpname}"
 
