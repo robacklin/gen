@@ -185,6 +185,11 @@ expr YourClass My${name}Class {
 	p->HelloWorld(new  My${name}Class);
 }
 
+# plain text file
+text my.conf {
+	keyString = someValue
+}
+
 #eof v${GEN_VERSION}
 EOF
 }
@@ -197,6 +202,9 @@ ltrim() {
 }
 ignore() {
 	awk '!/^#/'
+}
+removeleadingws() {
+	sed -e 's/^[ \t]*//'
 }
 keyword_options() {
 	if [ -n "${1}" ] ; then
@@ -294,6 +302,13 @@ keyword_expr() {
 		awk "/^expr\s${1}/"
 	else
 		awk '/^expr\s/'
+	fi
+}
+keyword_text() {
+	if [ -n "${1}" ] ; then
+		awk "/^text\s${1}/"
+	else
+		awk '/^text\s/'
 	fi
 }
 keyword_import() {
@@ -1827,12 +1842,47 @@ f_gen_shutdown() {
 	if [ -r "$TMPDIR/clex.tmp" ] ; then
 		rm $TMPDIR/clex.tmp
 	fi	
+	if [ -r "$TMPDIR/cltext.tmp" ] ; then
+		rm $TMPDIR/cltext.tmp
+	fi	
+	if [ -r "$TMPDIR/cxtext.tmp" ] ; then
+		rm $TMPDIR/cxtext.tmp
+	fi	
 	if [ -r "$TMPDIR/udef.tmp" ] ; then
 		rm $TMPDIR/udef.tmp
 	fi	
 	if [ -r "$TMPDIR/spec" ] ; then
 		rm $TMPDIR/spec
 	fi	
+}
+
+f_listtext() {
+	file=${1}
+	clist=${2}
+	if [ -r "$TMPDIR/cltext.tmp" ] ; then
+		cat $TMPDIR/cltext.tmp
+	else
+		cat ${file} | ignore | keyword_text > $TMPDIR/cltext.tmp
+		if [ -n "${GEN_SPEC_CONF}" ] ; then
+			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cltext.tmp
+			done
+			cat ${GEN_SPEC_CONF} | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cltext.tmp
+			done
+		else
+			cat $0 | awk '/^CLASS_/' | sed -e 's/=/} /g' -e 's/CLASS_/{/g' -e 's/"//g' > $TMPDIR/cxtext.tmp
+			cat $TMPDIR/cxtext.tmp | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cltext.tmp
+			done
+			cat $TMPDIR/cxtext.tmp | while read xkey expand ; do
+				sed -i "s/${xkey}/${expand}/g" $TMPDIR/cltext.tmp
+			done
+			rm $TMPDIR/cxtext.tmp
+		fi
+		f_update_def "${file}" "cltext.tmp"
+		cat $TMPDIR/cltext.tmp
+	fi
 }
 
 f_listexpr() {
@@ -1900,6 +1950,10 @@ f_listexpression() {
 	echo "void ${2}() {"
 	cat ${1} | ignore | awk "/^expr\s${2}()/ {flag=1;next} /^\}/{flag=0} flag {print}"
 	echo "}"
+}
+
+f_listtextplain() {
+	cat ${1} | ignore | awk "/^text\s${2}()/ {flag=1;next} /^\}/{flag=0} flag {print}"
 }
 
 f_listmembers() {
@@ -2157,6 +2211,16 @@ EOF
 			fi
 			echo "creating file $dfile for expression $cname" 
 			f_listexpression ${SPEC_FILE} ${cname} >> ${dfile}
+		done
+		f_listtext $SPEC_FILE | while read keyw cname bname other ; do
+			if [ "${cname}" = "${pname}" ] ; then
+				echo "WARNING: project name is the same as a expression name (${cname}) this will cause issues"
+			fi
+			lname=$(tolower $cname)
+			dfile=doc/${lname}
+			echo -n > ${dfile}
+			echo "creating file $dfile for text $cname" 
+			f_listtextplain ${SPEC_FILE} ${cname} | removeleadingws >> ${dfile}
 		done
 		mfile="src/main_${lpname}.cpp"
 		echo "" >> ${phfile}
