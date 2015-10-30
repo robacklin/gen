@@ -51,6 +51,7 @@ lang cpp
 # dep <URL> <DIRNAME> [<BRANCH>]
 dep http://hisham.hm/htop/releases/1.0.3/htop-1.0.3.tar.gz htop-1.0.3
 dep https://github.com/acklinr/ip_interface.git ip_interace master
+#dep https://github.com/maekitalo/cxxtools cxxtools master
 
 #TODO: pkg <PACKAGENAME> to install
 pkg libncursesw5-dev
@@ -183,6 +184,20 @@ order My${name}ClassParent:IMy${name}Class
 expr YourClass My${name}Class {
 	YourClass *p = YourClass();
 	p->HelloWorld(new  My${name}Class);
+}
+
+expr Main {
+	log_init();
+	cxxtools::Arg<std::string> ip(argc, argv, 'i');
+	cxxtools::Arg<unsigned short> port(argc, argv, 'p', 1234);
+	cxxtools::Arg<unsigned> bufsize(argc, argv, 'b', 8192);
+	cxxtools::Arg<bool> listen(argc, argv, 'l');
+	cxxtools::Arg<bool> read_reply(argc, argv, 'r');
+
+	cxxtools::net::TcpServer server(ip.getValue(), port);
+	cxxtools::net::iostream worker(server, bufsize);
+	std::cout << worker.rdbuf();
+	return 0;
 }
 
 # plain text file
