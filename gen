@@ -2065,6 +2065,35 @@ usage: gen FILE.spec or gen SPECNAME
 	place in stub project dir
 EOF
 	;;
+	-header)
+		shift
+			name=$1
+			fname=$(tolower ${name})
+			hname=$(toupper ${name})
+			cat<<EOF
+/*
+$(banner acklin)
+ Author: $USER
+ Date: ${date}
+*/
+#ifndef _${hname}_H
+#define _${hname}_H
+
+#include <map>
+#include <fstream>
+
+#ifdef _DEBUG
+	#define TRACE(format, ...) fprintf(stdout, "trace(%s/%s:%d) " format, __FUNCTION__, __FILE__, __LINE__, ## __VA_ARGS__ )
+#else
+	#define TRACE(format, ...) // no output
+#endif //_DEBUG
+
+#define INFO(format, ...) fprintf(stdout, "info(%s/%s:%d) " format, __FUNCTION__, __FILE__,__LINE__, ## __VA_ARGS__ )
+
+// ${fname}
+#endif //_${hname}_H
+EOF
+	;;
 	-gen)
 		shift
 		echo "gen Hello.spec created"
