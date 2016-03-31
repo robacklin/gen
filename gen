@@ -2074,7 +2074,7 @@ EOF
 /*
 $(banner acklin)
  Author: $USER
- Date: ${date}
+ Date: $(date)
 */
 #ifndef _${hname}_H
 #define _${hname}_H
