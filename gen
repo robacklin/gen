@@ -477,7 +477,7 @@ cat<<EOF
 which valgrind 2>&1 > /dev/null
 if [ "x\$?" != "x0" ] ; then
 	echo "valgrind not found in path"
-	echp "apt-get install valgrind"
+	echo "apt-get install valgrind"
 	exit 1
 fi
 
